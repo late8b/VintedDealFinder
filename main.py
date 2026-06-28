@@ -32,7 +32,7 @@ def search_items(
     per_page: int = Query(48, ge=1, le=96),
     price_from: float = Query(None, ge=0),
     price_to: float = Query(None, ge=0),
-    order: str = Query("newest_first", regex="^(relevance|newest_first|price_low_to_high|price_high_to_low)$"),
+        order: str = Query("newest_first", pattern="^(relevance|newest_first|price_low_to_high|price_high_to_low)$"),
     condition: str = Query(None, description="Comma-separated status keys: new_with_tags, very_good, etc."),
     min_likes: int = Query(None, ge=0),
     max_likes: int = Query(None, ge=0),
