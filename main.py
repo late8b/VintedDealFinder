@@ -118,11 +118,14 @@ def get_conditions():
     }
 
 
+@app.get("/")
+def root():
+    return {"status": "ok"}
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-
+    
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8000"))
