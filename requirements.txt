@@ -1,0 +1,4 @@
+fastapi
+uvicorn
+vinted_scraper
+python-multipart
