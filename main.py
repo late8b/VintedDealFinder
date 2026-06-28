@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from vinted_scraper import VintedScraper
-import os
+from curl_cffi import requests as curl_requests
+import os, time
 
 app = FastAPI(title="Vinted Search API")
 
@@ -14,7 +14,27 @@ app.add_middleware(
 )
 
 DOMAIN = os.getenv("VINTED_DOMAIN", "https://www.vinted.co.uk")
-scraper = VintedScraper(DOMAIN)
+BASE_URL = f"{DOMAIN}/api/v2/catalog/items"
+
+_session = None
+_last_cookie_fetch = 0
+
+def get_session():
+    global _session, _last_cookie_fetch
+    now = time.time()
+    if _session is None or now - _last_cookie_fetch > 600:
+        s = curl_requests.Session()
+        s.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-GB,en;q=0.9",
+        })
+        r = s.get(DOMAIN, impersonate="chrome120")
+        if r.status_code != 200:
+            raise RuntimeError(f"Failed to fetch session cookie from {DOMAIN}, status: {r.status_code}")
+        _session = s
+        _last_cookie_fetch = now
+    return _session
 
 STATUS_MAP = {
     "new_with_tags": 1,
@@ -32,7 +52,7 @@ def search_items(
     per_page: int = Query(48, ge=1, le=96),
     price_from: float = Query(None, ge=0),
     price_to: float = Query(None, ge=0),
-        order: str = Query("newest_first", pattern="^(relevance|newest_first|price_low_to_high|price_high_to_low)$"),
+    order: str = Query("newest_first", pattern="^(relevance|newest_first|price_low_to_high|price_high_to_low)$"),
     condition: str = Query(None, description="Comma-separated status keys: new_with_tags, very_good, etc."),
     min_likes: int = Query(None, ge=0),
     max_likes: int = Query(None, ge=0),
@@ -46,61 +66,55 @@ def search_items(
         params["price_from"] = price_from
     if price_to is not None:
         params["price_to"] = price_to
-
     if order:
         params["order"] = order
 
     if condition:
-        status_ids = []
+        ids = []
         for key in condition.split(","):
             key = key.strip().lower().replace(" ", "_")
             if key in STATUS_MAP:
-                status_ids.append(STATUS_MAP[key])
-        if status_ids:
-            params["status_ids"] = ",".join(str(s) for s in status_ids)
+                ids.append(str(STATUS_MAP[key]))
+        if ids:
+            params["status_ids"] = ",".join(ids)
 
-    if catalog_ids:
-        params["catalog_ids"] = catalog_ids
-    if brand_ids:
-        params["brand_ids"] = brand_ids
-    if size_ids:
-        params["size_ids"] = size_ids
+    for param_name, val in [("catalog_ids", catalog_ids), ("brand_ids", brand_ids), ("size_ids", size_ids)]:
+        if val:
+            params[param_name] = val
 
-    raw_items = scraper.search(params)
+    session = get_session()
+    r = session.get(BASE_URL, params=params, impersonate="chrome120")
+    if r.status_code != 200:
+        return {"error": f"Vinted API returned status {r.status_code}", "items": [], "total": 0, "page": page, "per_page": per_page}
+
+    data = r.json()
+    raw_items = data.get("items", [])
 
     items = []
     for item in raw_items:
-        fav_count = item.favourite_count or 0
+        fav_count = item.get("favourite_count") or 0
         if min_likes is not None and fav_count < min_likes:
             continue
         if max_likes is not None and fav_count > max_likes:
             continue
 
-        photo_url = None
-        if isinstance(item.photo, dict):
-            photo_url = item.photo.get("url")
-
-        seller_info = {}
-        if item.user:
-            if hasattr(item.user, "login"):
-                seller_info["username"] = item.user.login
-            elif isinstance(item.user, dict):
-                seller_info = item.user
+        price_info = item.get("price", {})
+        photo_obj = item.get("photo") or {}
+        user_obj = item.get("user") or {}
 
         items.append({
-            "id": item.id,
-            "title": item.title,
-            "price": item.price,
-            "currency": item.currency,
-            "url": item.url,
-            "image": photo_url,
-            "condition": item.status,
+            "id": item.get("id"),
+            "title": item.get("title"),
+            "price": price_info.get("amount"),
+            "currency": price_info.get("currency_code"),
+            "url": item.get("url"),
+            "image": photo_obj.get("url"),
+            "condition": item.get("status"),
             "likes": fav_count,
-            "views": item.view_count,
-            "brand": item.brand_title,
-            "size": item.size_title,
-            "seller": seller_info,
-            "created_at": None,
+            "views": item.get("view_count") or 0,
+            "brand": item.get("brand_title"),
+            "size": item.get("size_title"),
+            "seller": {"username": user_obj.get("login")},
         })
 
     return {"items": items, "total": len(items), "page": page, "per_page": per_page}
@@ -122,10 +136,12 @@ def get_conditions():
 def root():
     return {"status": "ok"}
 
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
-    
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8000"))
