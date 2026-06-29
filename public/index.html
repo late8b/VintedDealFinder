@@ -40,8 +40,6 @@
   .pagination button { padding: 6px 14px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; }
   .pagination button:hover { background: #f0f0f0; }
   .pagination button.active { background: #09f; color: #fff; border-color: #09f; }
-  .load-more { text-align: center; margin-top: 12px; }
-  .load-more button { padding: 8px 20px; background: #09f; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 4px; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
@@ -74,7 +72,7 @@
     </select>
   </div>
   <div class="row">
-    <select id="category">
+    <select id="catalogCat" onchange="loadSizesForCat()">
       <option value="">All categories</option>
     </select>
     <select id="size">
@@ -85,13 +83,12 @@
   </div>
   <div class="row">
     <label class="checkbox-label">
-      <input type="checkbox" id="dealMode"> Deal mode (scans multiple pages for low-likes items)
+      <input type="checkbox" id="dealMode"> Deal mode (scans multiple pages)
     </label>
     <span id="dealPagesWrapper" style="display:none">
       <label>Pages: <input type="number" id="dealPages" value="5" min="1" max="20" style="width:60px"></label>
     </span>
     <button class="btn" id="searchBtn" onclick="doSearch()">Search</button>
-    <button class="btn" id="dealsBtn" onclick="doDeals()" style="display:none">Find Deals</button>
   </div>
 </div>
 
@@ -102,82 +99,70 @@
 
 <script>
 let currentPage = 1;
-let lastResultCount = 0;
 
 document.getElementById('dealMode').addEventListener('change', function() {
   document.getElementById('dealPagesWrapper').style.display = this.checked ? 'inline' : 'none';
 });
 
-async function loadCategories() {
+async function loadFilters() {
+  const q = document.getElementById('query').value || 'clothing';
   try {
-    const res = await fetch('/api/categories');
+    const res = await fetch('/api/filters?q=' + encodeURIComponent(q));
     const data = await res.json();
-    if (data.error) { console.error('Categories error:', data.error); return; }
-    const sel = document.getElementById('category');
-    (data.categories || []).forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c.id;
-      opt.textContent = c.title;
-      sel.appendChild(opt);
-      if (c.children && c.children.length) {
-        c.children.forEach(ch => {
-          const o = document.createElement('option');
-          o.value = ch.id;
-          o.textContent = '  \u2514 ' + ch.title;
-          sel.appendChild(o);
-        });
-      }
-    });
-  } catch (e) { console.error('Categories load failed:', e); }
+    if (data.error || !data.catalog_categories) return;
+    populateCategories(data.catalog_categories);
+    if (data.sizes) populateSizes(data.sizes);
+  } catch {}
 }
 
-document.getElementById('category').addEventListener('change', async function() {
-  const sel = document.getElementById('size');
-  sel.innerHTML = '<option value="">Loading sizes...</option>';
-  sel.disabled = true;
-  try {
-    const ids = this.value;
-    const url = ids ? `/api/sizes?catalog_ids=${ids}` : '/api/sizes';
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.error) { console.error('Sizes error:', data.error); sel.innerHTML = '<option value="">Sizes unavailable</option>'; sel.disabled = false; return; }
-    sel.innerHTML = '<option value="">All sizes</option>';
-    (data.sizes || []).forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = s.title;
-      sel.appendChild(opt);
-    });
-  } catch (e) { console.error('Sizes load failed:', e); sel.innerHTML = '<option value="">All sizes</option>'; }
-  sel.disabled = false;
-});
+function populateCategories(cats) {
+  const sel = document.getElementById('catalogCat');
+  sel.innerHTML = '<option value="">All categories</option>';
+  (cats || []).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.title;
+    sel.appendChild(opt);
+  });
+}
 
-document.getElementById('category').addEventListener('change', async function() {
+function populateSizes(sizes) {
   const sel = document.getElementById('size');
-  sel.innerHTML = '<option value="">Loading sizes...</option>';
-  sel.disabled = true;
+  sel.innerHTML = '<option value="">All sizes</option>';
+  (sizes || []).forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = s.title;
+    sel.appendChild(opt);
+  });
+}
+
+async function loadSizesForCat() {
+  const catId = document.getElementById('catalogCat').value;
+  const sel = document.getElementById('size');
+  sel.innerHTML = '<option value="">All sizes</option>';
+  if (!catId) return;
   try {
-    const ids = this.value;
-    const url = ids ? `/api/sizes?catalog_ids=${ids}` : '/api/sizes';
-    const res = await fetch(url);
+    const res = await fetch('/api/filters?q=' + encodeURIComponent(document.getElementById('query').value || 'clothing'));
     const data = await res.json();
-    sel.innerHTML = '<option value="">All sizes</option>';
-    (data.sizes || []).forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = s.title;
-      sel.appendChild(opt);
-    });
-  } catch { sel.innerHTML = '<option value="">All sizes</option>'; }
-  sel.disabled = false;
-});
+    if (data.sizes) {
+      sel.innerHTML = '<option value="">All sizes</option>';
+      (data.sizes || []).forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.title;
+        sel.appendChild(opt);
+      });
+    }
+  } catch {}
+}
 
 function getSearchParams(page) {
   const p = { query: document.getElementById('query').value, page: page || 1, per_page: 48, order: document.getElementById('order').value };
   const pf = document.getElementById('priceMin').value;
   const pt = document.getElementById('priceMax').value;
   const cond = document.getElementById('condition').value;
-  const cat = document.getElementById('category').value;
+  const cat = document.getElementById('catalogCat').value;
   const sz = document.getElementById('size').value;
   const minL = document.getElementById('minLikes').value;
   const maxL = document.getElementById('maxLikes').value;
@@ -192,21 +177,15 @@ function getSearchParams(page) {
 }
 
 async function doSearch() {
-  const query = document.getElementById('query').value;
-  if (!query) return;
+  if (!document.getElementById('query').value) return;
   currentPage = 1;
-  if (document.getElementById('dealMode').checked) {
-    await doDeals();
-  } else {
-    await runSearch();
-  }
+  if (document.getElementById('dealMode').checked) { await doDeals(); return; }
+  await runSearch();
 }
 
 async function runSearch() {
   const btn = document.getElementById('searchBtn');
   const errDiv = document.getElementById('error');
-  const resultsDiv = document.getElementById('results');
-  const paginationDiv = document.getElementById('pagination');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Searching...';
   errDiv.style.display = 'none';
@@ -216,7 +195,6 @@ async function runSearch() {
     const res = await fetch('/api/search?' + params.toString());
     const data = await res.json();
     if (data.error) { errDiv.textContent = data.error; errDiv.style.display = 'block'; return; }
-    lastResultCount = data.total || 0;
     renderItems(data.items || [], data.total || 0);
     renderPagination(data.page || 1, data.total || 0);
   } catch (err) {
@@ -229,8 +207,7 @@ async function runSearch() {
 }
 
 async function doDeals() {
-  const query = document.getElementById('query').value;
-  if (!query) return;
+  if (!document.getElementById('query').value) return;
   const pages = parseInt(document.getElementById('dealPages').value) || 5;
   const maxLikes = document.getElementById('maxLikes').value || 3;
   const el = document.getElementById('results');
@@ -240,17 +217,10 @@ async function doDeals() {
   paginationDiv.innerHTML = '';
   errDiv.style.display = 'none';
 
-  const params = new URLSearchParams(getSearchParams(1));
-  params.set('per_page', '96');
-  params.delete('page');
-  params.delete('min_likes');
-  params.set('max_likes', maxLikes);
-
   try {
-    const res = await fetch('/api/deals?pages=' + pages + '&max_likes=' + maxLikes + '&query=' + encodeURIComponent(query));
+    const res = await fetch('/api/deals?pages=' + pages + '&max_likes=' + maxLikes + '&query=' + encodeURIComponent(document.getElementById('query').value));
     const data = await res.json();
     if (data.error) { errDiv.textContent = data.error; errDiv.style.display = 'block'; return; }
-    lastResultCount = data.total || 0;
     renderItems(data.items || [], data.total || 0);
   } catch (err) {
     errDiv.textContent = 'Error: ' + err.message;
@@ -302,12 +272,11 @@ function renderPagination(page, total) {
 
 async function goToPage(page) {
   currentPage = page;
-  const dealMode = document.getElementById('dealMode').checked;
-  if (dealMode) { await doDeals(); return; }
+  if (document.getElementById('dealMode').checked) { await doDeals(); return; }
   await runSearch();
 }
 
-loadCategories();
+loadFilters();
 </script>
 </body>
 </html>

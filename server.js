@@ -195,32 +195,10 @@ app.get('/api/deals', async (req, res) => {
   res.json({ items, total: items.length });
 });
 
-app.get('/api/categories', async (req, res) => {
-  const data = await vintedFetch(`${DOMAIN}/api/v2/catalog/main-categories`);
-  if (data.error) return res.json({ error: data.error, categories: [] });
-  const raw = data.main_categories || data.categories || data;
-  const cats = (Array.isArray(raw) ? raw : []).map(c => ({
-    id: c.id, title: c.title, size_type: c.size_type,
-    children: (c.children || []).map(ch => ({ id: ch.id, title: ch.title, size_type: ch.size_type })),
-  }));
-  res.json({ categories: cats });
-});
-
-app.get('/api/sizes', async (req, res) => {
-  const catalogIds = req.query.catalog_ids || '';
-  let url = `${DOMAIN}/api/v2/catalog/sizes?per_page=100`;
-  if (catalogIds) url += '&catalog_ids=' + catalogIds;
-  const data = await vintedFetch(url);
-  if (data.error) return res.json({ error: data.error, sizes: [] });
-  const raw = data.sizes || data;
-  const sizes = (Array.isArray(raw) ? raw : []).map(s => ({ id: s.id, title: s.title, size_type: s.size_type }));
-  res.json({ sizes });
-});
-
-app.get('/api/vdebug', async (req, res) => {
-  const path = req.query.path || '';
-  if (!path) return res.json({ error: '?path=... required' });
-  const data = await vintedFetch(`${DOMAIN}${path}`);
+app.get('/api/filters', async (req, res) => {
+  const q = req.query.q || '';
+  const data = await vintedFetch(`${DOMAIN}/api/v2/catalog/filters?search_text=${encodeURIComponent(q)}`);
+  if (data.error) return res.json({ error: data.error });
   res.json(data);
 });
 
