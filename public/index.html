@@ -101,13 +101,13 @@ document.getElementById('dealMode').addEventListener('change', function() {
 });
 
 async function loadSizes() {
-  const q = document.getElementById('query').value || 'clothing';
+  const q = document.getElementById('query').value || 'nike';
   const sel = document.getElementById('size');
   sel.innerHTML = '<option value="">Loading sizes...</option>';
   try {
-    const res = await fetch('/api/filters?q=' + encodeURIComponent(q));
+    const res = await fetch('/api/sizes?q=' + encodeURIComponent(q));
     const data = await res.json();
-    if (data.error || !data.sizes) {
+    if (data.error || !data.sizes || data.sizes.length === 0) {
       sel.innerHTML = '<option value="">Sizes unavailable</option>';
       return;
     }
@@ -115,7 +115,7 @@ async function loadSizes() {
     (data.sizes || []).forEach(s => {
       const opt = document.createElement('option');
       opt.value = s.id;
-      opt.textContent = s.title || s.name || s.id;
+      opt.textContent = s.title;
       sel.appendChild(opt);
     });
   } catch {

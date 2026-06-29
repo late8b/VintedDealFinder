@@ -195,27 +195,22 @@ app.get('/api/deals', async (req, res) => {
   res.json({ items, total: items.length });
 });
 
-app.get('/api/filters', async (req, res) => {
-  const q = req.query.q || '';
-  const data = await vintedFetch(`${DOMAIN}/api/v2/catalog/filters?search_text=${encodeURIComponent(q)}`);
-  if (data.error) return res.json({ error: data.error });
-  res.json(data);
-});
-
-app.get('/api/debug-filters', async (req, res) => {
-  const q = req.query.q || '';
-  const data = await vintedFetch(`${DOMAIN}/api/v2/catalog/filters?search_text=${encodeURIComponent(q)}`);
-  const sizeKeys = data.sizes ? Object.keys(data.sizes[0] || {}) : [];
-  res.json({
-    hasError: !!data.error,
-    topKeys: Object.keys(data),
-    hasCatalogCategories: !!data.catalog_categories,
-    catalogCatType: typeof data.catalog_categories,
-    hasSizes: !!data.sizes,
-    sizesCount: data.sizes ? data.sizes.length : 0,
-    sizeSampleKeys: sizeKeys,
-    sizeSample: (data.sizes || []).slice(0, 3),
+app.get('/api/sizes', async (req, res) => {
+  const q = req.query.q || 'clothing';
+  const data = await vintedFetch(`${API_BASE}?search_text=${encodeURIComponent(q)}&per_page=96`);
+  if (data.error) return res.json({ error: data.error, sizes: [] });
+  const seen = {};
+  const sizes = [];
+  (data.items || []).forEach(item => {
+    const id = item.size_id;
+    const title = item.size_title;
+    if (id && title && !seen[id]) {
+      seen[id] = true;
+      sizes.push({ id, title });
+    }
   });
+  sizes.sort((a, b) => a.id - b.id);
+  res.json({ sizes });
 });
 
 app.get('/api/conditions', (req, res) => res.json(STATUS_MAP));
