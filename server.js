@@ -7,8 +7,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DOMAIN = process.env.VINTED_DOMAIN || 'https://www.vinted.co.uk';
 const API_BASE = `${DOMAIN}/api/v2/catalog/items`;
-const COOKIE_FILE = path.join(__dirname, '.vinted_cookies');
 const CURL_BIN = path.join(__dirname, 'bin', 'curl-impersonate-chrome');
+
+let cookieJar = {};
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -16,17 +17,6 @@ const STATUS_MAP = {
   new_with_tags: 1, new_with_box: 2, new_without_tags: 3,
   very_good: 4, good: 5, satisfactory: 6,
 };
-
-function findCurl() {
-  if (process.platform === 'linux' && fs.existsSync(CURL_BIN)) {
-    return { bin: CURL_BIN, flag: true };
-  }
-  const r = spawnSync('curl', ['--version'], { timeout: 5000, encoding: 'utf-8' });
-  if (r.status === 0) {
-    return { bin: 'curl', flag: false };
-  }
-  return null;
-}
 
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -39,10 +29,53 @@ const BROWSER_HEADERS = {
   'x-requested-with': 'XMLHttpRequest',
 };
 
-async function nodeFetch(url) {
+function parseCookies(resp) {
+  const setCookie = resp.headers.get('set-cookie');
+  if (!setCookie) return;
+  setCookie.split(',').forEach(c => {
+    const m = c.match(/^([^=]+)=([^;]+)/);
+    if (m) cookieJar[m[1].trim()] = m[2].trim();
+  });
+}
+
+function formatCookies() {
+  return Object.entries(cookieJar).map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
+async function initSession() {
   try {
-    const res = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(20000) });
-    if (!res.ok) return { error: `HTTP ${res.status}` };
+    const res = await fetch(DOMAIN, {
+      headers: {
+        'User-Agent': BROWSER_HEADERS['User-Agent'],
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-GB,en;q=0.9',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
+    });
+    parseCookies(res);
+  } catch {}
+}
+
+async function nodeFetch(url) {
+  if (!cookieJar || Object.keys(cookieJar).length === 0) {
+    await initSession();
+  }
+  try {
+    const headers = { ...BROWSER_HEADERS, 'Cookie': formatCookies() };
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(20000), redirect: 'follow' });
+    parseCookies(res);
+    if (!res.ok) {
+      if (res.status === 403 || res.status === 503) {
+        await initSession();
+        headers['Cookie'] = formatCookies();
+        const retry = await fetch(url, { headers, signal: AbortSignal.timeout(20000), redirect: 'follow' });
+        if (!retry.ok) return { error: `HTTP ${retry.status}` };
+        parseCookies(retry);
+        return await retry.json();
+      }
+      return { error: `HTTP ${res.status}` };
+    }
     return await res.json();
   } catch (err) {
     return { error: err.message };
@@ -50,22 +83,35 @@ async function nodeFetch(url) {
 }
 
 function curlFetch(url) {
-  const c = findCurl();
+  let c = null;
+  if (process.platform === 'linux' && fs.existsSync(CURL_BIN)) {
+    c = { bin: CURL_BIN, flag: true };
+  } else {
+    const r = spawnSync('curl', ['--version'], { timeout: 5000, encoding: 'utf-8' });
+    if (r.status === 0) c = { bin: 'curl', flag: false };
+  }
   if (!c) return null;
 
   const args = ['-s', '-L', '--max-time', '20'];
   if (c.flag) args.push('--impersonate', 'chrome120');
-  args.push('-c', COOKIE_FILE, '-b', COOKIE_FILE);
   Object.entries(BROWSER_HEADERS).forEach(([k, v]) => args.push('-H', `${k}: ${v}`));
+  if (formatCookies()) args.push('-H', `Cookie: ${formatCookies()}`);
   args.push(url);
 
   const r = spawnSync(c.bin, args, { timeout: 30000, encoding: 'utf-8' });
   if (r.error || r.status !== 0) return null;
-  try { return JSON.parse(r.stdout || '{}'); }
-  catch { return null; }
+  try {
+    const data = JSON.parse(r.stdout || '{}');
+    const setCookie = (r.stderr || '').match(/Set-Cookie:\s*([^=\s]+)=([^\s;]+)/);
+    if (setCookie) cookieJar[setCookie[1]] = setCookie[2];
+    return data;
+  } catch { return null; }
 }
 
 async function vintedFetch(url) {
+  if (Object.keys(cookieJar).length === 0) {
+    await initSession();
+  }
   let data = curlFetch(url);
   if (data) return data;
   data = await nodeFetch(url);
@@ -94,8 +140,6 @@ function formatItems(raw, minLikes, maxLikes) {
     return acc;
   }, []);
 }
-
-// ---- Routes ----
 
 app.get('/api/search', async (req, res) => {
   const query = req.query.query || '';
