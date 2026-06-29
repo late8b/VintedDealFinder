@@ -28,45 +28,48 @@ function findCurl() {
   return null;
 }
 
-function vintedFetch(url) {
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Language': 'en-GB,en;q=0.9',
+  'Referer': `${DOMAIN}/`,
+  'Sec-Fetch-Dest': 'empty',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Site': 'same-origin',
+  'x-requested-with': 'XMLHttpRequest',
+};
+
+async function nodeFetch(url) {
+  try {
+    const res = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(20000) });
+    if (!res.ok) return { error: `HTTP ${res.status}` };
+    return await res.json();
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+function curlFetch(url) {
   const c = findCurl();
-  if (!c) return { error: 'No curl binary available' };
+  if (!c) return null;
 
   const args = ['-s', '-L', '--max-time', '20'];
   if (c.flag) args.push('--impersonate', 'chrome120');
   args.push('-c', COOKIE_FILE, '-b', COOKIE_FILE);
-  args.push(
-    '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    '-H', 'Accept: application/json, text/plain, */*',
-    '-H', 'Accept-Language: en-GB,en;q=0.9',
-    '-H', `Referer: ${DOMAIN}/`,
-    '-H', 'Sec-Fetch-Dest: empty',
-    '-H', 'Sec-Fetch-Mode: cors',
-    '-H', 'Sec-Fetch-Site: same-origin',
-    '-H', 'x-requested-with: XMLHttpRequest',
-  );
+  Object.entries(BROWSER_HEADERS).forEach(([k, v]) => args.push('-H', `${k}: ${v}`));
   args.push(url);
 
   const r = spawnSync(c.bin, args, { timeout: 30000, encoding: 'utf-8' });
-  if (r.error) return { error: r.error.message };
-  if (r.status !== 0) return { error: `curl status ${r.status}`, stderr: (r.stderr || '').slice(0, 300) };
-
+  if (r.error || r.status !== 0) return null;
   try { return JSON.parse(r.stdout || '{}'); }
-  catch { return { error: 'Non-JSON response from Vinted', snippet: (r.stdout || '').slice(0, 300) }; }
+  catch { return null; }
 }
 
-function refreshCookies() {
-  const c = findCurl();
-  if (!c) return false;
-  const args = ['-s', '-L', '--max-time', '15'];
-  if (c.flag) args.push('--impersonate', 'chrome120');
-  args.push('-c', COOKIE_FILE, '-b', COOKIE_FILE,
-    '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    '-H', 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    '-H', 'Accept-Language: en-GB,en;q=0.9',
-    DOMAIN);
-  const r = spawnSync(c.bin, args, { timeout: 20000, encoding: 'utf-8' });
-  return r.status === 0;
+async function vintedFetch(url) {
+  let data = curlFetch(url);
+  if (data) return data;
+  data = await nodeFetch(url);
+  return data || { error: 'Failed to fetch from Vinted' };
 }
 
 function buildUrl(qs) {
@@ -92,15 +95,9 @@ function formatItems(raw, minLikes, maxLikes) {
   }, []);
 }
 
-function tryFetch(url) {
-  let data = vintedFetch(url);
-  if (data.error) { refreshCookies(); data = vintedFetch(url); }
-  return data;
-}
-
 // ---- Routes ----
 
-app.get('/api/search', (req, res) => {
+app.get('/api/search', async (req, res) => {
   const query = req.query.query || '';
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const perPage = Math.min(parseInt(req.query.per_page) || 48, 96);
@@ -116,14 +113,14 @@ app.get('/api/search', (req, res) => {
     if (ids.length) params.status_ids = ids.join(',');
   }
 
-  const data = tryFetch(buildUrl(params));
+  const data = await vintedFetch(buildUrl(params));
   if (data.error) return res.json({ error: data.error, items: [], total: 0, page, per_page: perPage });
 
   const items = formatItems(data.items, minLikes, maxLikes);
   res.json({ items, total: items.length, page, per_page: perPage });
 });
 
-app.get('/api/deals', (req, res) => {
+app.get('/api/deals', async (req, res) => {
   const query = req.query.query || '';
   const maxLikes = parseInt(req.query.max_likes) || 3;
   const pages = Math.min(parseInt(req.query.pages) || 5, 20);
@@ -131,7 +128,7 @@ app.get('/api/deals', (req, res) => {
 
   const allItems = [];
   for (let p = 1; p <= pages; p++) {
-    const data = tryFetch(buildUrl({ search_text: query, page: p, per_page: perPage, order: 'newest_first' }));
+    const data = await vintedFetch(buildUrl({ search_text: query, page: p, per_page: perPage, order: 'newest_first' }));
     if (data.error) break;
     allItems.push(...(data.items || []));
   }
