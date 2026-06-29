@@ -71,11 +71,8 @@
     </select>
   </div>
   <div class="row">
-    <select id="catalogCat" onchange="loadSizesForCat()">
-      <option value="">All categories</option>
-    </select>
     <select id="size">
-      <option value="">All sizes</option>
+      <option value="">Loading sizes...</option>
     </select>
     <input type="number" id="minLikes" placeholder="Min likes" min="0">
     <input type="number" id="maxLikes" placeholder="Max likes (deals)" min="0">
@@ -103,57 +100,27 @@ document.getElementById('dealMode').addEventListener('change', function() {
   document.getElementById('dealPagesWrapper').style.display = this.checked ? 'inline' : 'none';
 });
 
-async function loadFilters() {
+async function loadSizes() {
   const q = document.getElementById('query').value || 'clothing';
+  const sel = document.getElementById('size');
+  sel.innerHTML = '<option value="">Loading sizes...</option>';
   try {
     const res = await fetch('/api/filters?q=' + encodeURIComponent(q));
     const data = await res.json();
-    if (data.error || !data.catalog_categories) return;
-    populateCategories(data.catalog_categories);
-    if (data.sizes) populateSizes(data.sizes);
-  } catch {}
-}
-
-function populateCategories(cats) {
-  const sel = document.getElementById('catalogCat');
-  sel.innerHTML = '<option value="">All categories</option>';
-  (cats || []).forEach(c => {
-    const opt = document.createElement('option');
-    opt.value = c.id;
-    opt.textContent = c.title;
-    sel.appendChild(opt);
-  });
-}
-
-function populateSizes(sizes) {
-  const sel = document.getElementById('size');
-  sel.innerHTML = '<option value="">All sizes</option>';
-  (sizes || []).forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s.id;
-    opt.textContent = s.title;
-    sel.appendChild(opt);
-  });
-}
-
-async function loadSizesForCat() {
-  const catId = document.getElementById('catalogCat').value;
-  const sel = document.getElementById('size');
-  sel.innerHTML = '<option value="">All sizes</option>';
-  if (!catId) return;
-  try {
-    const res = await fetch('/api/filters?q=' + encodeURIComponent(document.getElementById('query').value || 'clothing'));
-    const data = await res.json();
-    if (data.sizes) {
-      sel.innerHTML = '<option value="">All sizes</option>';
-      (data.sizes || []).forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.id;
-        opt.textContent = s.title;
-        sel.appendChild(opt);
-      });
+    if (data.error || !data.sizes) {
+      sel.innerHTML = '<option value="">Sizes unavailable</option>';
+      return;
     }
-  } catch {}
+    sel.innerHTML = '<option value="">All sizes</option>';
+    (data.sizes || []).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.title || s.name || s.id;
+      sel.appendChild(opt);
+    });
+  } catch {
+    sel.innerHTML = '<option value="">Sizes unavailable</option>';
+  }
 }
 
 function getSearchParams(page) {
@@ -161,14 +128,12 @@ function getSearchParams(page) {
   const pf = document.getElementById('priceMin').value;
   const pt = document.getElementById('priceMax').value;
   const cond = document.getElementById('condition').value;
-  const cat = document.getElementById('catalogCat').value;
   const sz = document.getElementById('size').value;
   const minL = document.getElementById('minLikes').value;
   const maxL = document.getElementById('maxLikes').value;
   if (pf) p.price_from = pf;
   if (pt) p.price_to = pt;
   if (cond) p.condition = cond;
-  if (cat) p.catalog_ids = cat;
   if (sz) p.size_ids = sz;
   if (minL) p.min_likes = minL;
   if (maxL) p.max_likes = maxL;
@@ -275,7 +240,7 @@ async function goToPage(page) {
   await runSearch();
 }
 
-loadFilters();
+loadSizes();
 </script>
 </body>
 </html>

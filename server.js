@@ -202,6 +202,22 @@ app.get('/api/filters', async (req, res) => {
   res.json(data);
 });
 
+app.get('/api/debug-filters', async (req, res) => {
+  const q = req.query.q || '';
+  const data = await vintedFetch(`${DOMAIN}/api/v2/catalog/filters?search_text=${encodeURIComponent(q)}`);
+  const sizeKeys = data.sizes ? Object.keys(data.sizes[0] || {}) : [];
+  res.json({
+    hasError: !!data.error,
+    topKeys: Object.keys(data),
+    hasCatalogCategories: !!data.catalog_categories,
+    catalogCatType: typeof data.catalog_categories,
+    hasSizes: !!data.sizes,
+    sizesCount: data.sizes ? data.sizes.length : 0,
+    sizeSampleKeys: sizeKeys,
+    sizeSample: (data.sizes || []).slice(0, 3),
+  });
+});
+
 app.get('/api/conditions', (req, res) => res.json(STATUS_MAP));
 
 app.get('/', (req, res) => {
