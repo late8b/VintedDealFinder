@@ -14,7 +14,7 @@ let cookieJar = {};
 app.use(express.static(path.join(__dirname, 'public')));
 
 const STATUS_MAP = {
-  new_with_tags: 1, new_with_box: 2, new_without_tags: 3,
+  new_with_tags: 1, new_without_tags: 3,
   very_good: 4, good: 5, satisfactory: 6,
 };
 
