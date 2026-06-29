@@ -127,7 +127,7 @@ function renderItems(items, total) {
     const img = item.image
       ? `<img src="${item.image}" alt="${item.title}" loading="lazy">`
       : '<div class="no-image">No image</div>';
-    const url = 'https://www.vinted.co.uk' + (item.url || '');
+    const url = (item.url || '').startsWith('http') ? item.url : 'https://www.vinted.co.uk' + item.url;
     return `<div class="card">
       <a href="${url}" target="_blank" rel="noopener">
         ${img}
