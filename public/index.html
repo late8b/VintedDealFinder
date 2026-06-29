@@ -47,15 +47,18 @@
   <button id="tabDeals" onclick="switchTab('deals')">Best Deals</button>
 </div>
 
-<div class="search-box">
-  <input type="text" id="query" placeholder="Search for items..." onkeydown="if(event.key==='Enter') doSearch()">
-  <select id="order">
-    <option value="newest_first">Newest</option>
-    <option value="price_low_to_high">Price: Low to High</option>
-    <option value="price_high_to_low">Price: High to Low</option>
-    <option value="relevance">Relevance</option>
-  </select>
-  <button onclick="doSearch()">Search</button>
+<div class="search-box" style="gap:6px">
+  <input type="text" id="query" placeholder="Search for items..." onkeydown="if(event.key==='Enter') doSearch()" style="width:100%;margin-bottom:4px">
+  <div style="display:flex;gap:6px;width:100%;flex-wrap:wrap">
+    <select id="order" style="flex:1;min-width:100px">
+      <option value="newest_first">Newest</option>
+      <option value="price_low_to_high">Price: Low to High</option>
+      <option value="price_high_to_low">Price: High to Low</option>
+      <option value="relevance">Relevance</option>
+    </select>
+    <input type="number" id="priceMax" placeholder="Max price" min="0" step="0.01" style="flex:0 0 100px">
+    <button onclick="doSearch()" style="flex:0 0 auto">Search</button>
+  </div>
 </div>
 
 <div id="dealsControls" class="controls" style="display:none">
@@ -83,10 +86,13 @@ async function doSearch() {
   const query = document.getElementById('query').value;
   if (!query) return;
   const order = document.getElementById('order').value;
+  const priceMax = document.getElementById('priceMax').value;
   const el = document.getElementById('results');
   el.innerHTML = '<div class="loading">Loading...</div>';
 
-  const res = await fetch(`/api/search?query=${encodeURIComponent(query)}&order=${order}`);
+  let url = `/api/search?query=${encodeURIComponent(query)}&order=${order}`;
+  if (priceMax) url += `&price_to=${encodeURIComponent(priceMax)}`;
+  const res = await fetch(url);
   const data = await res.json();
 
   if (data.error) { el.innerHTML = `<div class="error">${data.error}</div>`; return; }
@@ -127,11 +133,11 @@ function renderItems(items, total) {
         ${img}
         <div class="card-body">
           <h3 title="${item.title}">${item.title}</h3>
-          <div class="meta">${item.brand || ''} ${item.size ? 'Â· ' + item.size : ''}</div>
-          <div class="price">${item.currency === 'GBP' ? 'Â£' : 'â‚¬'}${item.price}</div>
+          <div class="meta">${item.brand || ''} ${item.size ? '· ' + item.size : ''}</div>
+          <div class="price">${item.currency === 'GBP' ? '£' : '€'}${item.price}</div>
           <div style="margin-top:6px">
-            <span class="badge badge-likes">â¤ ${item.likes}</span>
-            <span class="badge badge-views">ðŸ‘ ${item.views}</span>
+            <span class="badge badge-likes">❤ ${item.likes}</span>
+            <span class="badge badge-views">👁 ${item.views}</span>
           </div>
         </div>
       </a>
