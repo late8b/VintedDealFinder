@@ -1,0 +1,13 @@
+{
+  "name": "vinted-deal-finder",
+  "version": "1.0.0",
+  "description": "Vinted deal finder API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "bash build.sh"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

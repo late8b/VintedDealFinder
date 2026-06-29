@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vinted Deal Finder</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f5f5f5; color: #222; }
+  h1 { margin-bottom: 8px; }
+  .subtitle { color: #666; margin-top: 0; }
+  .search-box { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .search-box input, .search-box select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+  .search-box input[type="text"] { flex: 1; min-width: 200px; }
+  .search-box button { padding: 8px 20px; background: #09f; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+  .search-box button:hover { background: #07d; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tabs button { padding: 8px 16px; border: 1px solid #ddd; background: #fff; border-radius: 4px 4px 0 0; cursor: pointer; }
+  .tabs button.active { background: #09f; color: #fff; border-color: #09f; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .controls label { font-size: 13px; color: #555; display: flex; align-items: center; gap: 4px; }
+  .controls input { width: 60px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .card { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: transform .1s; }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 3px 8px rgba(0,0,0,0.15); }
+  .card img { width: 100%; height: 200px; object-fit: cover; display: block; background: #eee; }
+  .card-body { padding: 10px 12px 12px; }
+  .card-body h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-body .meta { font-size: 12px; color: #888; margin-bottom: 4px; }
+  .card-body .price { font-size: 16px; font-weight: 700; color: #09f; }
+  .card-body .badge { display: inline-block; font-size: 11px; padding: 2px 6px; border-radius: 3px; margin-right: 4px; }
+  .badge-likes { background: #ffe0e0; color: #c00; }
+  .badge-views { background: #e0f0ff; color: #069; }
+  .card-body a { text-decoration: none; color: inherit; }
+  .loading { text-align: center; padding: 40px; color: #888; }
+  .error { background: #ffe0e0; color: #c00; padding: 12px; border-radius: 6px; }
+  .count { font-size: 13px; color: #888; margin-bottom: 8px; }
+  .no-image { height: 200px; background: #eee; display: flex; align-items: center; justify-content: center; color: #bbb; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>Vinted Deal Finder</h1>
+<p class="subtitle">Find undervalued items on Vinted</p>
+
+<div class="tabs">
+  <button id="tabSearch" class="active" onclick="switchTab('search')">Search</button>
+  <button id="tabDeals" onclick="switchTab('deals')">Best Deals</button>
+</div>
+
+<div class="search-box">
+  <input type="text" id="query" placeholder="Search for items..." onkeydown="if(event.key==='Enter') doSearch()">
+  <select id="order">
+    <option value="newest_first">Newest</option>
+    <option value="price_low_to_high">Price: Low to High</option>
+    <option value="price_high_to_low">Price: High to Low</option>
+    <option value="relevance">Relevance</option>
+  </select>
+  <button onclick="doSearch()">Search</button>
+</div>
+
+<div id="dealsControls" class="controls" style="display:none">
+  <label>Max likes: <input type="number" id="maxLikes" value="3" min="0"></label>
+  <label>Pages: <input type="number" id="pages" value="5" min="1" max="20"></label>
+  <button onclick="doDeals()">Find Deals</button>
+</div>
+
+<div id="count" class="count"></div>
+<div id="results"></div>
+
+<script>
+let currentTab = 'search';
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tabSearch').className = tab === 'search' ? 'active' : '';
+  document.getElementById('tabDeals').className = tab === 'deals' ? 'active' : '';
+  document.getElementById('dealsControls').style.display = tab === 'deals' ? 'flex' : 'none';
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('count').textContent = '';
+}
+
+async function doSearch() {
+  const query = document.getElementById('query').value;
+  if (!query) return;
+  const order = document.getElementById('order').value;
+  const el = document.getElementById('results');
+  el.innerHTML = '<div class="loading">Loading...</div>';
+
+  const res = await fetch(`/api/search?query=${encodeURIComponent(query)}&order=${order}`);
+  const data = await res.json();
+
+  if (data.error) { el.innerHTML = `<div class="error">${data.error}</div>`; return; }
+  renderItems(data.items, data.total);
+}
+
+async function doDeals() {
+  const query = document.getElementById('query').value;
+  if (!query) return;
+  const maxLikes = document.getElementById('maxLikes').value || 3;
+  const pages = document.getElementById('pages').value || 5;
+  const el = document.getElementById('results');
+  el.innerHTML = '<div class="loading">Loading deals (this may take a moment)...</div>';
+
+  const res = await fetch(`/api/deals?query=${encodeURIComponent(query)}&max_likes=${maxLikes}&pages=${pages}`);
+  const data = await res.json();
+
+  if (data.error) { el.innerHTML = `<div class="error">${data.error}</div>`; return; }
+  renderItems(data.items, data.total);
+}
+
+function renderItems(items, total) {
+  const el = document.getElementById('results');
+  document.getElementById('count').textContent = total + ' items found';
+
+  if (!items || items.length === 0) {
+    el.innerHTML = '<div class="loading">No items found</div>';
+    return;
+  }
+
+  el.innerHTML = '<div class="grid">' + items.map(item => {
+    const img = item.image
+      ? `<img src="${item.image}" alt="${item.title}" loading="lazy">`
+      : '<div class="no-image">No image</div>';
+    const url = 'https://www.vinted.co.uk' + (item.url || '');
+    return `<div class="card">
+      <a href="${url}" target="_blank" rel="noopener">
+        ${img}
+        <div class="card-body">
+          <h3 title="${item.title}">${item.title}</h3>
+          <div class="meta">${item.brand || ''} ${item.size ? 'Â· ' + item.size : ''}</div>
+          <div class="price">${item.currency === 'GBP' ? 'Â£' : 'â‚¬'}${item.price}</div>
+          <div style="margin-top:6px">
+            <span class="badge badge-likes">â¤ ${item.likes}</span>
+            <span class="badge badge-views">ðŸ‘ ${item.views}</span>
+          </div>
+        </div>
+      </a>
+    </div>`;
+  }).join('') + '</div>';
+}
+</script>
+</body>
+</html>
