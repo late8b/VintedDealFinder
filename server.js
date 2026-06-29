@@ -124,11 +124,12 @@ function buildUrl(qs) {
   return `${API_BASE}?${p}`;
 }
 
-function formatItems(raw, minLikes, maxLikes) {
+function formatItems(raw, minLikes, maxLikes, sizeFilter) {
   return (raw || []).reduce((acc, item) => {
     const likes = item.favourite_count || 0;
     if (minLikes !== undefined && likes < minLikes) return acc;
     if (maxLikes !== undefined && likes > maxLikes) return acc;
+    if (sizeFilter && item.size_title && !item.size_title.toLowerCase().includes(sizeFilter.toLowerCase())) return acc;
     acc.push({
       id: item.id, title: item.title,
       price: item.price?.amount, currency: item.price?.currency_code,
@@ -152,7 +153,6 @@ app.get('/api/search', async (req, res) => {
   const params = { search_text: query, page, per_page: perPage, order };
   if (req.query.price_from) params.price_from = req.query.price_from;
   if (req.query.price_to) params.price_to = req.query.price_to;
-  if (req.query.size_ids) params.size_ids = req.query.size_ids;
   if (req.query.catalog_ids) params.catalog_ids = req.query.catalog_ids;
   if (req.query.brand_ids) params.brand_ids = req.query.brand_ids;
   if (req.query.condition) {
@@ -163,7 +163,7 @@ app.get('/api/search', async (req, res) => {
   const data = await vintedFetch(buildUrl(params));
   if (data.error) return res.json({ error: data.error, items: [], total: 0, page, per_page: perPage });
 
-  const items = formatItems(data.items, minLikes, maxLikes);
+  const items = formatItems(data.items, minLikes, maxLikes, req.query.size);
   res.json({ items, total: items.length, page, per_page: perPage });
 });
 
@@ -198,21 +198,15 @@ app.get('/api/deals', async (req, res) => {
 app.get('/api/sizes', async (req, res) => {
   const q = req.query.q || 'nike';
   const data = await vintedFetch(`${API_BASE}?search_text=${encodeURIComponent(q)}&per_page=96`);
-  if (data.error) return res.json({ error: data.error, sizes: [], debug: data.error });
+  if (data.error) return res.json({ error: data.error, sizes: [] });
   const seen = {};
   const sizes = [];
-  let sampleItem = null;
   (data.items || []).forEach(item => {
-    if (!sampleItem) sampleItem = item;
-    const id = item.size_id;
-    const title = item.size_title;
-    if (id && title && !seen[id]) {
-      seen[id] = true;
-      sizes.push({ id, title });
-    }
+    const t = item.size_title;
+    if (t && !seen[t]) { seen[t] = true; sizes.push({ title: t }); }
   });
-  sizes.sort((a, b) => a.id - b.id);
-  res.json({ sizes, totalItems: data.items ? data.items.length : 0, sampleKeys: sampleItem ? Object.keys(sampleItem).filter(k => k.includes('size')) : [] });
+  sizes.sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true }));
+  res.json({ sizes });
 });
 
 app.get('/api/conditions', (req, res) => res.json(STATUS_MAP));

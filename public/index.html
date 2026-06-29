@@ -74,6 +74,7 @@
     <select id="size">
       <option value="">Loading sizes...</option>
     </select>
+    <span style="font-size:12px;color:#888">(values from sample search)</span>
     <input type="number" id="minLikes" placeholder="Min likes" min="0">
     <input type="number" id="maxLikes" placeholder="Max likes (deals)" min="0">
   </div>
@@ -114,7 +115,7 @@ async function loadSizes() {
     sel.innerHTML = '<option value="">All sizes</option>';
     (data.sizes || []).forEach(s => {
       const opt = document.createElement('option');
-      opt.value = s.id;
+      opt.value = s.title;
       opt.textContent = s.title;
       sel.appendChild(opt);
     });
@@ -134,7 +135,7 @@ function getSearchParams(page) {
   if (pf) p.price_from = pf;
   if (pt) p.price_to = pt;
   if (cond) p.condition = cond;
-  if (sz) p.size_ids = sz;
+  if (sz) p.size = sz;
   if (minL) p.min_likes = minL;
   if (maxL) p.max_likes = maxL;
   return p;
