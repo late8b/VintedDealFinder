@@ -196,12 +196,14 @@ app.get('/api/deals', async (req, res) => {
 });
 
 app.get('/api/sizes', async (req, res) => {
-  const q = req.query.q || 'clothing';
+  const q = req.query.q || 'nike';
   const data = await vintedFetch(`${API_BASE}?search_text=${encodeURIComponent(q)}&per_page=96`);
-  if (data.error) return res.json({ error: data.error, sizes: [] });
+  if (data.error) return res.json({ error: data.error, sizes: [], debug: data.error });
   const seen = {};
   const sizes = [];
+  let sampleItem = null;
   (data.items || []).forEach(item => {
+    if (!sampleItem) sampleItem = item;
     const id = item.size_id;
     const title = item.size_title;
     if (id && title && !seen[id]) {
@@ -210,7 +212,7 @@ app.get('/api/sizes', async (req, res) => {
     }
   });
   sizes.sort((a, b) => a.id - b.id);
-  res.json({ sizes });
+  res.json({ sizes, totalItems: data.items ? data.items.length : 0, sampleKeys: sampleItem ? Object.keys(sampleItem).filter(k => k.includes('size')) : [] });
 });
 
 app.get('/api/conditions', (req, res) => res.json(STATUS_MAP));
