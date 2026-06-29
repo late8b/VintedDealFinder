@@ -152,6 +152,9 @@ app.get('/api/search', async (req, res) => {
   const params = { search_text: query, page, per_page: perPage, order };
   if (req.query.price_from) params.price_from = req.query.price_from;
   if (req.query.price_to) params.price_to = req.query.price_to;
+  if (req.query.size_ids) params.size_ids = req.query.size_ids;
+  if (req.query.catalog_ids) params.catalog_ids = req.query.catalog_ids;
+  if (req.query.brand_ids) params.brand_ids = req.query.brand_ids;
   if (req.query.condition) {
     const ids = req.query.condition.split(',').map(k => STATUS_MAP[k.trim().toLowerCase().replace(/\s+/g, '_')]).filter(Boolean);
     if (ids.length) params.status_ids = ids.join(',');
@@ -190,6 +193,25 @@ app.get('/api/deals', async (req, res) => {
   }));
 
   res.json({ items, total: items.length });
+});
+
+app.get('/api/categories', async (req, res) => {
+  const data = await vintedFetch(`${DOMAIN}/api/v2/catalog/main-categories`);
+  if (data.error) return res.json({ error: data.error, categories: [] });
+  const cats = (data.categories || data.main_categories || []).map(c => ({
+    id: c.id, title: c.title, size_type: c.size_type,
+    children: (c.children || []).map(ch => ({ id: ch.id, title: ch.title, size_type: ch.size_type })),
+  }));
+  res.json({ categories: cats });
+});
+
+app.get('/api/sizes', async (req, res) => {
+  const catalogIds = req.query.catalog_ids || '';
+  const url = `${DOMAIN}/api/v2/catalog/sizes?per_page=100${catalogIds ? '&catalog_ids=' + catalogIds : ''}`;
+  const data = await vintedFetch(url);
+  if (data.error) return res.json({ error: data.error, sizes: [] });
+  const sizes = (data.sizes || []).map(s => ({ id: s.id, title: s.title, size_type: s.size_type }));
+  res.json({ sizes });
 });
 
 app.get('/api/conditions', (req, res) => res.json(STATUS_MAP));
