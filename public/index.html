@@ -112,25 +112,45 @@ async function loadCategories() {
   try {
     const res = await fetch('/api/categories');
     const data = await res.json();
+    if (data.error) { console.error('Categories error:', data.error); return; }
     const sel = document.getElementById('category');
     (data.categories || []).forEach(c => {
       const opt = document.createElement('option');
       opt.value = c.id;
       opt.textContent = c.title;
-      opt.dataset.sizeType = c.size_type || '';
       sel.appendChild(opt);
       if (c.children && c.children.length) {
         c.children.forEach(ch => {
           const o = document.createElement('option');
           o.value = ch.id;
           o.textContent = '  \u2514 ' + ch.title;
-          o.dataset.sizeType = ch.size_type || '';
           sel.appendChild(o);
         });
       }
     });
-  } catch {}
+  } catch (e) { console.error('Categories load failed:', e); }
 }
+
+document.getElementById('category').addEventListener('change', async function() {
+  const sel = document.getElementById('size');
+  sel.innerHTML = '<option value="">Loading sizes...</option>';
+  sel.disabled = true;
+  try {
+    const ids = this.value;
+    const url = ids ? `/api/sizes?catalog_ids=${ids}` : '/api/sizes';
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) { console.error('Sizes error:', data.error); sel.innerHTML = '<option value="">Sizes unavailable</option>'; sel.disabled = false; return; }
+    sel.innerHTML = '<option value="">All sizes</option>';
+    (data.sizes || []).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.title;
+      sel.appendChild(opt);
+    });
+  } catch (e) { console.error('Sizes load failed:', e); sel.innerHTML = '<option value="">All sizes</option>'; }
+  sel.disabled = false;
+});
 
 document.getElementById('category').addEventListener('change', async function() {
   const sel = document.getElementById('size');
