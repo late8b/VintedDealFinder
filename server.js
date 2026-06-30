@@ -172,15 +172,37 @@ app.get('/api/deals', async (req, res) => {
   const maxLikes = parseInt(req.query.max_likes) || 3;
   const pages = Math.min(parseInt(req.query.pages) || 5, 20);
   const perPage = 96;
+  const strict = req.query.strict === 'true';
+
+  const params = { search_text: query, page: 1, per_page: perPage, order: 'newest_first' };
+  if (req.query.price_from) params.price_from = req.query.price_from;
+  if (req.query.price_to) params.price_to = req.query.price_to;
+  if (req.query.catalog_ids) params.catalog_ids = req.query.catalog_ids;
+  if (req.query.brand_ids) params.brand_ids = req.query.brand_ids;
+  if (req.query.condition) {
+    const ids = req.query.condition.split(',').map(k => STATUS_MAP[k.trim().toLowerCase().replace(/\s+/g, '_')]).filter(Boolean);
+    if (ids.length) params.status_ids = ids.join(',');
+  }
+  if (req.query.size) params.size = req.query.size;
 
   const allItems = [];
   for (let p = 1; p <= pages; p++) {
-    const data = await vintedFetch(buildUrl({ search_text: query, page: p, per_page: perPage, order: 'newest_first' }));
+    params.page = p;
+    const data = await vintedFetch(buildUrl(params));
     if (data.error) break;
     allItems.push(...(data.items || []));
   }
 
-  const filtered = allItems.filter(item => (item.favourite_count || 0) <= maxLikes);
+  let filtered = allItems.filter(item => (item.favourite_count || 0) <= maxLikes);
+
+  if (strict && query) {
+    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    filtered = filtered.filter(item => {
+      const title = (item.title || '').toLowerCase();
+      return terms.every(t => title.includes(t));
+    });
+  }
+
   filtered.sort((a, b) => (a.id || 0) - (b.id || 0));
 
   const items = filtered.map(item => ({

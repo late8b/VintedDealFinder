@@ -84,6 +84,9 @@
     </label>
     <span id="dealPagesWrapper" style="display:none">
       <label>Pages: <input type="number" id="dealPages" value="5" min="1" max="20" style="width:60px"></label>
+      <label class="checkbox-label" style="margin-left:8px">
+        <input type="checkbox" id="strictMatch" checked> Strict title match
+      </label>
     </span>
     <button class="btn" id="searchBtn" onclick="doSearch()">Search</button>
   </div>
@@ -175,6 +178,7 @@ async function doDeals() {
   if (!document.getElementById('query').value) return;
   const pages = parseInt(document.getElementById('dealPages').value) || 5;
   const maxLikes = document.getElementById('maxLikes').value || 3;
+  const strict = document.getElementById('strictMatch').checked;
   const el = document.getElementById('results');
   const errDiv = document.getElementById('error');
   const paginationDiv = document.getElementById('pagination');
@@ -182,8 +186,18 @@ async function doDeals() {
   paginationDiv.innerHTML = '';
   errDiv.style.display = 'none';
 
+  const p = { query: document.getElementById('query').value, pages, max_likes: maxLikes, strict };
+  const pf = document.getElementById('priceMin').value;
+  const pt = document.getElementById('priceMax').value;
+  const cond = document.getElementById('condition').value;
+  const sz = document.getElementById('size').value;
+  if (pf) p.price_from = pf;
+  if (pt) p.price_to = pt;
+  if (cond) p.condition = cond;
+  if (sz) p.size = sz;
+
   try {
-    const res = await fetch('/api/deals?pages=' + pages + '&max_likes=' + maxLikes + '&query=' + encodeURIComponent(document.getElementById('query').value));
+    const res = await fetch('/api/deals?' + new URLSearchParams(p).toString());
     const data = await res.json();
     if (data.error) { errDiv.textContent = data.error; errDiv.style.display = 'block'; return; }
     renderItems(data.items || [], data.total || 0);
