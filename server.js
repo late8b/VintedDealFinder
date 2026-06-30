@@ -124,12 +124,20 @@ function buildUrl(qs) {
   return `${API_BASE}?${p}`;
 }
 
-function formatItems(raw, minLikes, maxLikes, sizeFilter) {
+function formatItems(raw, minLikes, maxLikes, sizeFilter, priceFrom, priceTo) {
   return (raw || []).reduce((acc, item) => {
     const likes = item.favourite_count || 0;
     if (minLikes !== undefined && likes < minLikes) return acc;
     if (maxLikes !== undefined && likes > maxLikes) return acc;
-    if (sizeFilter && item.size_title && !item.size_title.toLowerCase().includes(sizeFilter.toLowerCase())) return acc;
+    const price = item.price?.amount;
+    if (priceFrom !== undefined && (price === undefined || price < priceFrom)) return acc;
+    if (priceTo !== undefined && (price === undefined || price > priceTo)) return acc;
+    if (sizeFilter) {
+      const st = (item.size_title || '').toLowerCase().trim();
+      const ss = sizeFilter.toLowerCase().trim();
+      const tokens = st.split(/[\s\/\-]+/).filter(Boolean);
+      if (!tokens.some(t => t === ss) && st !== ss) return acc;
+    }
     acc.push({
       id: item.id, title: item.title,
       price: item.price?.amount, currency: item.price?.currency_code,
@@ -160,10 +168,13 @@ app.get('/api/search', async (req, res) => {
     if (ids.length) params.status_ids = ids.join(',');
   }
 
+  const priceFrom = req.query.price_from !== undefined ? parseFloat(req.query.price_from) : undefined;
+  const priceTo = req.query.price_to !== undefined ? parseFloat(req.query.price_to) : undefined;
+
   const data = await vintedFetch(buildUrl(params));
   if (data.error) return res.json({ error: data.error, items: [], total: 0, page, per_page: perPage });
 
-  const items = formatItems(data.items, minLikes, maxLikes, req.query.size);
+  const items = formatItems(data.items, minLikes, maxLikes, req.query.size, priceFrom, priceTo);
   res.json({ items, total: items.length, page, per_page: perPage });
 });
 
@@ -183,8 +194,6 @@ app.get('/api/deals', async (req, res) => {
     const ids = req.query.condition.split(',').map(k => STATUS_MAP[k.trim().toLowerCase().replace(/\s+/g, '_')]).filter(Boolean);
     if (ids.length) params.status_ids = ids.join(',');
   }
-  if (req.query.size) params.size = req.query.size;
-
   const allItems = [];
   for (let p = 1; p <= pages; p++) {
     params.page = p;
@@ -194,6 +203,21 @@ app.get('/api/deals', async (req, res) => {
   }
 
   let filtered = allItems.filter(item => (item.favourite_count || 0) <= maxLikes);
+
+  const priceFrom = req.query.price_from !== undefined ? parseFloat(req.query.price_from) : undefined;
+  const priceTo = req.query.price_to !== undefined ? parseFloat(req.query.price_to) : undefined;
+  if (priceFrom !== undefined) filtered = filtered.filter(item => (item.price?.amount || 0) >= priceFrom);
+  if (priceTo !== undefined) filtered = filtered.filter(item => (item.price?.amount || 0) <= priceTo);
+
+  const sizeFilter = req.query.size;
+  if (sizeFilter) {
+    const ss = sizeFilter.toLowerCase().trim();
+    filtered = filtered.filter(item => {
+      const st = (item.size_title || '').toLowerCase().trim();
+      const tokens = st.split(/[\s\/\-]+/).filter(Boolean);
+      return tokens.some(t => t === ss) || st === ss;
+    });
+  }
 
   if (strict && query) {
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
