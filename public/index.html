@@ -13,6 +13,10 @@
   .filters .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
   .filters .row:last-child { margin-bottom: 0; }
   .filters input, .filters select { padding: 7px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background: #fff; }
+  .cond-group { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
+  .cond-label { font-size:12px; display:flex; align-items:center; gap:3px; cursor:pointer; padding:4px 8px; background:#f5f5f5; border:1px solid #ddd; border-radius:4px; user-select:none; transition:all .15s; }
+  .cond-label:has(input:checked) { background:#e0f0ff; border-color:#09f; color:#069; }
+  .cond-label input { margin:0; width:13px; height:13px; }
   .filters input[type="text"] { flex: 1; min-width: 180px; }
   .filters input[type="number"] { width: 90px; }
   .filters label { font-size: 13px; color: #555; display: flex; align-items: center; gap: 4px; }
@@ -106,14 +110,13 @@
   <div class="row">
     <input type="number" id="priceMin" placeholder="Min price" min="0" step="0.01">
     <input type="number" id="priceMax" placeholder="Max price" min="0" step="0.01">
-    <select id="condition">
-      <option value="">Any condition</option>
-      <option value="new_with_tags">New with tags</option>
-      <option value="new_without_tags">New without tags</option>
-      <option value="very_good">Very good</option>
-      <option value="good">Good</option>
-      <option value="satisfactory">Satisfactory</option>
-    </select>
+    <div class="cond-group" id="conditionGroup">
+      <label class="cond-label"><input type="checkbox" value="new_with_tags"> New w/ tags</label>
+      <label class="cond-label"><input type="checkbox" value="new_without_tags"> New wo/ tags</label>
+      <label class="cond-label"><input type="checkbox" value="very_good"> Very good</label>
+      <label class="cond-label"><input type="checkbox" value="good"> Good</label>
+      <label class="cond-label"><input type="checkbox" value="satisfactory"> Satisfactory</label>
+    </div>
   </div>
   <div class="row">
     <select id="size">
@@ -208,11 +211,16 @@ async function loadSizes() {
   }
 }
 
+function getConditions() {
+  const checked = document.querySelectorAll('#conditionGroup input:checked');
+  return Array.from(checked).map(cb => cb.value).join(',');
+}
+
 function getSearchParams(page) {
   const p = { query: document.getElementById('query').value, page: page || 1, per_page: 48, order: document.getElementById('order').value };
   const pf = document.getElementById('priceMin').value;
   const pt = document.getElementById('priceMax').value;
-  const cond = document.getElementById('condition').value;
+  const cond = getConditions();
   const sz = document.getElementById('size').value;
   const minL = document.getElementById('minLikes').value;
   const maxL = document.getElementById('maxLikes').value;
@@ -270,7 +278,7 @@ async function doDeals() {
   const p = { query: document.getElementById('query').value, pages, max_likes: maxLikes, strict };
   const pf = document.getElementById('priceMin').value;
   const pt = document.getElementById('priceMax').value;
-  const cond = document.getElementById('condition').value;
+  const cond = getConditions();
   const sz = document.getElementById('size').value;
   if (pf) p.price_from = pf;
   if (pt) p.price_to = pt;
