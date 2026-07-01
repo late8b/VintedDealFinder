@@ -72,7 +72,9 @@ async function initSession(domain) {
     });
     const dk = domainKey(domain || DOMAIN);
     parseCookies(res, dk);
-  } catch {}
+  } catch (e) {
+    console.error('initSession failed for', domain, e.message);
+  }
 }
 
 async function nodeFetch(url, dk) {
@@ -302,14 +304,15 @@ app.get('/api/sizes', async (req, res) => {
 app.get('/api/conditions', (req, res) => res.json(STATUS_MAP));
 
 app.post('/api/refresh-basket', async (req, res) => {
-  const { item_ids } = req.body;
+  const { item_ids, domains } = req.body;
   if (!Array.isArray(item_ids) || item_ids.length === 0) {
     return res.json({ items: [] });
   }
   const results = await Promise.allSettled(
-    item_ids.map(async (id) => {
+    item_ids.map(async (id, i) => {
+      const domain = domains && domains[i] ? (COUNTRY_DOMAINS[domains[i]] || DOMAIN) : DOMAIN;
       try {
-        const url = `${DOMAIN}/api/v2/items/${id}`;
+        const url = `${domain}/api/v2/items/${id}`;
         const data = await vintedFetch(url);
         if (data && !data.error && data.price) {
           return { id: data.id, price: data.price.amount, currency: data.price.currency_code, title: data.title };

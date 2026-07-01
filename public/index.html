@@ -314,26 +314,33 @@ document.addEventListener('click', function(e) {
   }
 });
 
+function getFilterParams() {
+  return {
+    pf: document.getElementById('priceMin').value,
+    pt: document.getElementById('priceMax').value,
+    cond: getConditions(),
+    sz: document.getElementById('size').value,
+    exc: document.getElementById('exclude').value,
+    cnt: document.getElementById('country').value,
+  };
+}
+
+function applyFilterParams(p, f) {
+  if (f.pf) p.price_from = f.pf;
+  if (f.pt) p.price_to = f.pt;
+  if (f.cond) p.condition = f.cond;
+  if (f.sz) { p.size = f.sz; const cat = sizeCatalogIds(); if (cat) p.catalog_ids = cat; }
+  if (f.exc) p.exclude = f.exc;
+  if (f.cnt !== 'uk') p.country = f.cnt;
+}
+
 function getSearchParams(page) {
   const p = { query: document.getElementById('query').value, page: page || 1, per_page: document.getElementById('perPage').value, order: document.getElementById('order').value };
-  const pf = document.getElementById('priceMin').value;
-  const pt = document.getElementById('priceMax').value;
-  const cond = getConditions();
-  const sz = document.getElementById('size').value;
   const minL = document.getElementById('minLikes').value;
   const maxL = document.getElementById('maxLikes').value;
-  const exc = document.getElementById('exclude').value;
-  const cnt = document.getElementById('country').value;
-  if (pf) p.price_from = pf;
-  if (pt) p.price_to = pt;
-  if (cond) p.condition = cond;
-  if (sz) p.size = sz;
-  const cat = sz ? sizeCatalogIds() : '';
-  if (cat) p.catalog_ids = cat;
   if (minL) p.min_likes = minL;
   if (maxL) p.max_likes = maxL;
-  if (exc) p.exclude = exc;
-  if (cnt !== 'uk') p.country = cnt;
+  applyFilterParams(p, getFilterParams());
   return p;
 }
 
@@ -378,20 +385,7 @@ async function doDeals() {
   errDiv.style.display = 'none';
 
   const p = { query: document.getElementById('query').value, pages, max_likes: maxLikes, strict };
-  const pf = document.getElementById('priceMin').value;
-  const pt = document.getElementById('priceMax').value;
-  const cond = getConditions();
-  const sz = document.getElementById('size').value;
-  const exc = document.getElementById('exclude').value;
-  const cnt = document.getElementById('country').value;
-  if (pf) p.price_from = pf;
-  if (pt) p.price_to = pt;
-  if (cond) p.condition = cond;
-  if (sz) p.size = sz;
-  const cat = sz ? sizeCatalogIds() : '';
-  if (cat) p.catalog_ids = cat;
-  if (exc) p.exclude = exc;
-  if (cnt !== 'uk') p.country = cnt;
+  applyFilterParams(p, getFilterParams());
 
   try {
     const res = await fetch('/api/deals?' + new URLSearchParams(p).toString());
@@ -419,16 +413,17 @@ function renderItems(items, total) {
   const bundleSellers = new Set(Object.keys(sellerCounts).filter(u => sellerCounts[u] > 1));
 
   const basketIds = new Set((BasketManager.get() || []).map(i => i.id));
-  const perPage = parseInt(document.getElementById('perPage').value) || 48;
   el.innerHTML = '<div class="grid">' + items.map(item => {
     const img = item.image
       ? `<img src="${item.image}" alt="${item.title}" loading="lazy">`
       : '<div class="no-image">No image</div>';
-    const url = (item.url || '').startsWith('http') ? item.url : 'https://www.vinted.co.uk' + item.url;
+    const baseDomain = { uk: 'https://www.vinted.co.uk', fr: 'https://www.vinted.fr', de: 'https://www.vinted.de', es: 'https://www.vinted.es', it: 'https://www.vinted.it', nl: 'https://www.vinted.nl', us: 'https://www.vinted.com' }[document.getElementById('country').value] || 'https://www.vinted.co.uk';
+    const url = (item.url || '').startsWith('http') ? item.url : baseDomain + item.url;
     const inBasket = basketIds.has(item.id);
     const btnClass = 'btn-add-basket' + (inBasket ? ' added' : '');
     const btnText = inBasket ? 'Added' : 'Add to Basket';
-    const dataItem = encodeURIComponent(JSON.stringify({ id: item.id, title: item.title, image: item.image, price: item.price, currency: item.currency, url: url }));
+    const countryCode = document.getElementById('country').value;
+    const dataItem = encodeURIComponent(JSON.stringify({ id: item.id, title: item.title, image: item.image, price: item.price, currency: item.currency, url: url, country: countryCode }));
 
     let extraBadges = '';
     if (bundleSellers.has(item.seller?.username || '')) {
@@ -486,8 +481,8 @@ document.getElementById('results').addEventListener('click', function(e) {
   if (!btn) return;
   if (btn.classList.contains('added')) { BasketManager.toggle(); return; }
   try {
-    const item = JSON.parse(decodeURIComponent(btn.dataset.item));
-    BasketManager.add(item);
+    const raw = JSON.parse(decodeURIComponent(btn.dataset.item));
+    BasketManager.add(raw);
     btn.textContent = 'Added';
     btn.classList.add('added');
   } catch (err) {}
@@ -553,12 +548,14 @@ function renderSavedSearches() {
     if (s.price_from) filters.push('£' + s.price_from + '+');
     if (s.price_to) filters.push('≤£' + s.price_to);
     if (s.condition) filters.push(s.condition.replace(/_/g, ' '));
+    const sq = BasketManager.esc(s.query);
+    const newCount = s._new_count;
     return `<div class="saved-item">
-      <span class="q" title="${s.query}${filters.length ? ' (' + filters.join(', ') + ')' : ''}">
-        <a href="#" onclick="event.preventDefault();loadSaved(${i})" style="color:inherit;text-decoration:none">${s.query}</a>
-        ${filters.length ? '<span style="color:#888;font-size:11px">' + filters.join(', ') + '</span>' : ''}
+      <span class="q" title="${sq}${filters.length ? ' (' + BasketManager.esc(filters.join(', ')) + ')' : ''}">
+        <a href="#" onclick="event.preventDefault();loadSaved(${i})" style="color:inherit;text-decoration:none">${sq}</a>
+        ${filters.length ? '<span style="color:#888;font-size:11px">' + BasketManager.esc(filters.join(', ')) + '</span>' : ''}
       </span>
-      ${s.last_id > 0 ? '<span class="new-badge" id="newBadge' + i + '"></span>' : ''}
+      ${newCount ? '<span class="new-badge">' + newCount + '</span>' : ''}
       <button class="btn-del-saved" onclick="deleteSaved(${i})" title="Delete">✕</button>
     </div>`;
   }).join('');
@@ -634,6 +631,7 @@ function init() {
     document.getElementById('notifRequest').style.display = 'inline';
   }
   checkSavedSearches();
+  setInterval(checkSavedSearches, 60000);
 }
 
 loadSizes();

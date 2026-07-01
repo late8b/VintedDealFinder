@@ -1,3 +1,9 @@
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
 const BasketManager = {
   STORAGE_KEY: 'vintedDealBasket',
 
@@ -28,6 +34,7 @@ const BasketManager = {
       discount_percent: 20,
       last_price: item.price,
       price_dropped: false,
+      country: item.country || 'uk',
     });
     this.save(basket);
     this.toast('Added to basket');
@@ -120,11 +127,7 @@ const BasketManager = {
     }).join('');
   },
 
-  esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s || '';
-    return d.innerHTML;
-  },
+  esc,
 
   copyPrice(id) {
     const item = this.get().find(i => i.id === id);
@@ -159,11 +162,12 @@ const BasketManager = {
     const basket = this.get();
     if (basket.length === 0) return;
     const ids = basket.map(i => i.id);
+    const domains = basket.map(i => i.country || 'uk');
     try {
       const res = await fetch('/api/refresh-basket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_ids: ids }),
+        body: JSON.stringify({ item_ids: ids, domains }),
       });
       const data = await res.json();
       if (!data.items) return;
