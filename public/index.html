@@ -13,10 +13,14 @@
   .filters .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
   .filters .row:last-child { margin-bottom: 0; }
   .filters input, .filters select { padding: 7px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background: #fff; }
-  .cond-group { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
-  .cond-label { font-size:12px; display:flex; align-items:center; gap:3px; cursor:pointer; padding:4px 8px; background:#f5f5f5; border:1px solid #ddd; border-radius:4px; user-select:none; transition:all .15s; }
-  .cond-label:has(input:checked) { background:#e0f0ff; border-color:#09f; color:#069; }
-  .cond-label input { margin:0; width:13px; height:13px; }
+  .cond-dropdown { position:relative; }
+  .cond-btn { padding:7px 14px; border:1px solid #ddd; border-radius:4px; font-size:13px; background:#fff; cursor:pointer; white-space:nowrap; }
+  .cond-btn:hover { background:#f5f5f5; }
+  .cond-menu { display:none; position:absolute; top:100%; left:0; z-index:50; background:#fff; border:1px solid #ddd; border-radius:6px; padding:6px; box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:170px; margin-top:2px; }
+  .cond-menu.open { display:flex; flex-direction:column; gap:2px; }
+  .cond-label { font-size:13px; display:flex; align-items:center; gap:6px; cursor:pointer; padding:6px 10px; border-radius:4px; user-select:none; transition:background .1s; }
+  .cond-label:hover { background:#f0f4ff; }
+  .cond-label input { margin:0; width:14px; height:14px; }
   .filters input[type="text"] { flex: 1; min-width: 180px; }
   .filters input[type="number"] { width: 90px; }
   .filters label { font-size: 13px; color: #555; display: flex; align-items: center; gap: 4px; }
@@ -110,12 +114,15 @@
   <div class="row">
     <input type="number" id="priceMin" placeholder="Min price" min="0" step="0.01">
     <input type="number" id="priceMax" placeholder="Max price" min="0" step="0.01">
-    <div class="cond-group" id="conditionGroup">
-      <label class="cond-label"><input type="checkbox" value="new_with_tags"> New w/ tags</label>
-      <label class="cond-label"><input type="checkbox" value="new_without_tags"> New wo/ tags</label>
-      <label class="cond-label"><input type="checkbox" value="very_good"> Very good</label>
-      <label class="cond-label"><input type="checkbox" value="good"> Good</label>
-      <label class="cond-label"><input type="checkbox" value="satisfactory"> Satisfactory</label>
+    <div class="cond-dropdown">
+      <button type="button" class="cond-btn" id="condBtn" onclick="toggleCondDropdown()">Condition ▾</button>
+      <div class="cond-menu" id="condMenu">
+        <label class="cond-label"><input type="checkbox" value="new_with_tags" onchange="updateCondBtn()"> New w/ tags</label>
+        <label class="cond-label"><input type="checkbox" value="new_without_tags" onchange="updateCondBtn()"> New wo/ tags</label>
+        <label class="cond-label"><input type="checkbox" value="very_good" onchange="updateCondBtn()"> Very good</label>
+        <label class="cond-label"><input type="checkbox" value="good" onchange="updateCondBtn()"> Good</label>
+        <label class="cond-label"><input type="checkbox" value="satisfactory" onchange="updateCondBtn()"> Satisfactory</label>
+      </div>
     </div>
   </div>
   <div class="row">
@@ -212,9 +219,25 @@ async function loadSizes() {
 }
 
 function getConditions() {
-  const checked = document.querySelectorAll('#conditionGroup input:checked');
+  const checked = document.querySelectorAll('#condMenu input:checked');
   return Array.from(checked).map(cb => cb.value).join(',');
 }
+
+function toggleCondDropdown() {
+  document.getElementById('condMenu').classList.toggle('open');
+}
+
+function updateCondBtn() {
+  const total = document.querySelectorAll('#condMenu input').length;
+  const checked = document.querySelectorAll('#condMenu input:checked').length;
+  document.getElementById('condBtn').textContent = checked === 0 ? 'Condition ▾' : 'Condition (' + checked + ') ▾';
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.cond-dropdown')) {
+    document.getElementById('condMenu').classList.remove('open');
+  }
+});
 
 function getSearchParams(page) {
   const p = { query: document.getElementById('query').value, page: page || 1, per_page: 48, order: document.getElementById('order').value };
