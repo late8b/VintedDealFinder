@@ -225,7 +225,8 @@ app.get('/api/deals', async (req, res) => {
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
     filtered = filtered.filter(item => {
       const title = (item.title || '').toLowerCase();
-      return terms.every(t => title.includes(t));
+      const brand = (item.brand_title || '').toLowerCase();
+      return terms.every(t => title.includes(t) || brand.includes(t));
     });
   }
 
