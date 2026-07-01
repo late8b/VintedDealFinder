@@ -15,7 +15,7 @@ const COUNTRY_DOMAINS = {
   us: 'https://www.vinted.com',
 };
 
-let cookieJar = {};
+let cookieJars = {};
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
@@ -29,29 +29,39 @@ const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Accept': 'application/json, text/plain, */*',
   'Accept-Language': 'en-GB,en;q=0.9',
-  'Referer': `${DOMAIN}/`,
   'Sec-Fetch-Dest': 'empty',
   'Sec-Fetch-Mode': 'cors',
   'Sec-Fetch-Site': 'same-origin',
   'x-requested-with': 'XMLHttpRequest',
 };
 
-function parseCookies(resp) {
+function domainKey(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'default'; }
+}
+
+function jar(k) {
+  if (!cookieJars[k]) cookieJars[k] = {};
+  return cookieJars[k];
+}
+
+function parseCookies(resp, dk) {
   const setCookie = resp.headers.get('set-cookie');
   if (!setCookie) return;
+  const j = jar(dk);
   setCookie.split(',').forEach(c => {
     const m = c.match(/^([^=]+)=([^;]+)/);
-    if (m) cookieJar[m[1].trim()] = m[2].trim();
+    if (m) j[m[1].trim()] = m[2].trim();
   });
 }
 
-function formatCookies() {
-  return Object.entries(cookieJar).map(([k, v]) => `${k}=${v}`).join('; ');
+function formatCookies(dk) {
+  const j = jar(dk);
+  return Object.entries(j).map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
-async function initSession() {
+async function initSession(domain) {
   try {
-    const res = await fetch(DOMAIN, {
+    const res = await fetch(domain || DOMAIN, {
       headers: {
         'User-Agent': BROWSER_HEADERS['User-Agent'],
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -60,25 +70,30 @@ async function initSession() {
       redirect: 'follow',
       signal: AbortSignal.timeout(15000),
     });
-    parseCookies(res);
+    const dk = domainKey(domain || DOMAIN);
+    parseCookies(res, dk);
   } catch {}
 }
 
-async function nodeFetch(url) {
-  if (!cookieJar || Object.keys(cookieJar).length === 0) {
-    await initSession();
+async function nodeFetch(url, dk) {
+  if (!dk) dk = domainKey(url);
+  const origin = url.startsWith('http') ? new URL(url).origin : DOMAIN;
+  if (!cookieJars[dk] || Object.keys(cookieJars[dk]).length === 0) {
+    await initSession(origin);
+    dk = domainKey(origin);
   }
   try {
-    const headers = { ...BROWSER_HEADERS, 'Cookie': formatCookies() };
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(20000), redirect: 'follow' });
-    parseCookies(res);
+    const hdrs = { ...BROWSER_HEADERS, 'Referer': `${origin}/`, 'Cookie': formatCookies(dk) };
+    const res = await fetch(url, { headers: hdrs, signal: AbortSignal.timeout(20000), redirect: 'follow' });
+    parseCookies(res, dk);
     if (!res.ok) {
       if (res.status === 403 || res.status === 503) {
-        await initSession();
-        headers['Cookie'] = formatCookies();
-        const retry = await fetch(url, { headers, signal: AbortSignal.timeout(20000), redirect: 'follow' });
+        await initSession(origin);
+        const dk2 = domainKey(origin);
+        hdrs['Cookie'] = formatCookies(dk2);
+        const retry = await fetch(url, { headers: hdrs, signal: AbortSignal.timeout(20000), redirect: 'follow' });
         if (!retry.ok) return { error: `HTTP ${retry.status}` };
-        parseCookies(retry);
+        parseCookies(retry, dk2);
         return await retry.json();
       }
       return { error: `HTTP ${res.status}` };
@@ -89,7 +104,7 @@ async function nodeFetch(url) {
   }
 }
 
-function curlFetch(url) {
+function curlFetch(url, dk) {
   let c = null;
   if (process.platform === 'linux' && fs.existsSync(CURL_BIN)) {
     c = { bin: CURL_BIN, flag: true };
@@ -98,30 +113,33 @@ function curlFetch(url) {
     if (r.status === 0) c = { bin: 'curl', flag: false };
   }
   if (!c) return null;
-
+  if (!dk) dk = domainKey(url);
+  const origin = url.startsWith('http') ? new URL(url).origin : DOMAIN;
   const args = ['-s', '-L', '--max-time', '20'];
   if (c.flag) args.push('--impersonate', 'chrome120');
   Object.entries(BROWSER_HEADERS).forEach(([k, v]) => args.push('-H', `${k}: ${v}`));
-  if (formatCookies()) args.push('-H', `Cookie: ${formatCookies()}`);
+  args.push('-H', `Referer: ${origin}/`);
+  if (formatCookies(dk)) args.push('-H', `Cookie: ${formatCookies(dk)}`);
   args.push(url);
-
   const r = spawnSync(c.bin, args, { timeout: 30000, encoding: 'utf-8' });
   if (r.error || r.status !== 0) return null;
   try {
     const data = JSON.parse(r.stdout || '{}');
     const setCookie = (r.stderr || '').match(/Set-Cookie:\s*([^=\s]+)=([^\s;]+)/);
-    if (setCookie) cookieJar[setCookie[1]] = setCookie[2];
+    if (setCookie) jar(dk)[setCookie[1]] = setCookie[2];
     return data;
   } catch { return null; }
 }
 
 async function vintedFetch(url) {
-  if (Object.keys(cookieJar).length === 0) {
-    await initSession();
+  const dk = domainKey(url);
+  const origin = url.startsWith('http') ? new URL(url).origin : DOMAIN;
+  if (!cookieJars[dk] || Object.keys(cookieJars[dk]).length === 0) {
+    await initSession(origin);
   }
-  let data = curlFetch(url);
+  let data = curlFetch(url, dk);
   if (data) return data;
-  data = await nodeFetch(url);
+  data = await nodeFetch(url, dk);
   return data || { error: 'Failed to fetch from Vinted' };
 }
 
