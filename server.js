@@ -168,8 +168,7 @@ function formatItems(raw, minLikes, maxLikes, sizeFilter, priceFrom, priceTo, ex
     if (sizeFilter) {
       const st = (item.size_title || '').toLowerCase().trim();
       const ss = sizeFilter.toLowerCase().trim();
-      const tokens = st.split(/[\s\/\-]+/).filter(Boolean);
-      if (!tokens.some(t => t === ss) && st !== ss) return acc;
+      if (st !== ss) return acc;
     }
     if (exclude) {
       const title = (item.title || '').toLowerCase();
@@ -256,11 +255,7 @@ app.get('/api/deals', async (req, res) => {
   const sizeFilter = req.query.size;
   if (sizeFilter) {
     const ss = sizeFilter.toLowerCase().trim();
-    filtered = filtered.filter(item => {
-      const st = (item.size_title || '').toLowerCase().trim();
-      const tokens = st.split(/[\s\/\-]+/).filter(Boolean);
-      return tokens.some(t => t === ss) || st === ss;
-    });
+    filtered = filtered.filter(item => (item.size_title || '').toLowerCase().trim() === ss);
   }
 
   if (strict && query) {
