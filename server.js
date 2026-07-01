@@ -12,6 +12,7 @@ const CURL_BIN = path.join(__dirname, 'bin', 'curl-impersonate-chrome');
 let cookieJar = {};
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
 
 const STATUS_MAP = {
   new_with_tags: 1, new_without_tags: 3,
@@ -256,6 +257,27 @@ app.get('/api/sizes', async (req, res) => {
 });
 
 app.get('/api/conditions', (req, res) => res.json(STATUS_MAP));
+
+app.post('/api/refresh-basket', async (req, res) => {
+  const { item_ids } = req.body;
+  if (!Array.isArray(item_ids) || item_ids.length === 0) {
+    return res.json({ items: [] });
+  }
+  const results = await Promise.allSettled(
+    item_ids.map(async (id) => {
+      try {
+        const url = `${DOMAIN}/api/v2/items/${id}`;
+        const data = await vintedFetch(url);
+        if (data && !data.error && data.price) {
+          return { id: data.id, price: data.price.amount, currency: data.price.currency_code, title: data.title };
+        }
+      } catch {}
+      return { id, error: 'unavailable' };
+    })
+  );
+  const items = results.map(r => r.status === 'fulfilled' ? r.value : { error: 'fetch failed' });
+  res.json({ items });
+});
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

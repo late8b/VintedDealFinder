@@ -42,11 +42,55 @@
   .pagination button.active { background: #09f; color: #fff; border-color: #09f; }
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 4px; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  .basket-toggle { position:fixed; top:16px; right:16px; z-index:100; padding:8px 16px; background:#09f; color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; display:flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(0,0,0,0.15); }
+  .basket-toggle:hover { background:#07d; }
+  .basket-badge { background:#ff4444; color:#fff; border-radius:50%; width:20px; height:20px; display:none; align-items:center; justify-content:center; font-size:11px; font-weight:700; }
+  .basket-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:200; opacity:0; pointer-events:none; transition:opacity .2s; }
+  .basket-overlay.show { opacity:1; pointer-events:auto; }
+  .basket-panel { position:fixed; top:0; right:0; bottom:0; width:380px; max-width:90vw; background:#fff; z-index:300; transform:translateX(100%); transition:transform .25s ease; display:flex; flex-direction:column; box-shadow:-4px 0 12px rgba(0,0,0,0.1); }
+  .basket-panel.open { transform:translateX(0); }
+  .basket-header { display:flex; align-items:center; gap:10px; padding:16px 20px; border-bottom:1px solid #eee; flex-shrink:0; }
+  .basket-header h2 { margin:0; font-size:18px; flex:1; }
+  .basket-header span { font-size:13px; color:#888; }
+  .basket-close { background:none; border:none; font-size:20px; cursor:pointer; padding:4px 8px; color:#888; }
+  .basket-close:hover { color:#222; }
+  .basket-items { flex:1; overflow-y:auto; padding:8px 16px; }
+  .basket-empty { text-align:center; padding:40px 0; color:#aaa; font-size:14px; }
+  .basket-item { display:flex; gap:12px; padding:12px 0; border-bottom:1px solid #f0f0f0; }
+  .basket-item.price-dropped { background:#f0fff4; margin:0 -16px; padding:12px 16px; border-radius:4px; }
+  .basket-item-img { width:64px; height:64px; object-fit:cover; border-radius:6px; background:#eee; flex-shrink:0; }
+  .basket-item-body { flex:1; min-width:0; }
+  .basket-item-title { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:2px; }
+  .basket-item-price { font-size:15px; font-weight:700; color:#09f; margin-bottom:6px; }
+  .basket-offer-row { margin-bottom:4px; }
+  .basket-discount-label { font-size:12px; color:#555; display:flex; align-items:center; gap:6px; }
+  .basket-discount-label input[type="range"] { width:80px; margin:0; height:16px; }
+  .basket-discount-val { font-size:12px; font-weight:600; min-width:28px; }
+  .basket-target-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .basket-target-row span { font-size:12px; }
+  .btn-sm { padding:4px 10px; border:none; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600; }
+  .btn-copy { background:#e8f4ff; color:#069; }
+  .btn-copy:hover { background:#d0eaff; }
+  .btn-offer { background:#09b83e; color:#fff; }
+  .btn-offer:hover { background:#07a033; }
+  .btn-remove { background:none; color:#c00; font-size:15px; padding:2px 6px; }
+  .btn-remove:hover { background:#ffe0e0; }
+  .btn-add-basket { display:block; width:calc(100% - 24px); margin:0 12px 10px; padding:7px; background:#09f; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600; text-align:center; }
+  .btn-add-basket:hover { background:#07d; }
+  .btn-add-basket.added { background:#09b83e; }
+  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(80px); background:#333; color:#fff; padding:10px 20px; border-radius:8px; font-size:14px; z-index:9999; opacity:0; transition:all .3s ease; pointer-events:none; white-space:nowrap; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .badge-dropped { background:#09b83e; color:#fff; font-size:10px; margin-left:4px; }
+  .basket-stale { font-size:11px; color:#c00; margin-left:6px; }
 </style>
 </head>
 <body>
 <h1>Vinted Deal Finder</h1>
 <p class="subtitle">Search and find undervalued items on Vinted</p>
+<button class="basket-toggle" onclick="BasketManager.toggle()">
+  Basket <span id="basketBadge" class="basket-badge">0</span>
+</button>
 
 <div class="filters">
   <div class="row">
@@ -92,11 +136,22 @@
   </div>
 </div>
 
+<div id="toast" class="toast"></div>
+<div id="basketOverlay" class="basket-overlay" onclick="BasketManager.close()"></div>
+<div id="basketPanel" class="basket-panel">
+  <div class="basket-header">
+    <h2>Deal Basket</h2>
+    <span id="basketCountLabel">0 items</span>
+    <button class="basket-close" onclick="BasketManager.close()">✕</button>
+  </div>
+  <div id="basketItems" class="basket-items"></div>
+</div>
 <div id="error" class="error" style="display:none"></div>
 <div id="count" class="count"></div>
 <div id="results"></div>
 <div id="pagination" class="pagination"></div>
 
+<script src="basket.js"></script>
 <script>
 let currentPage = 1;
 
@@ -214,11 +269,16 @@ function renderItems(items, total) {
     el.innerHTML = '<div class="loading">No items found</div>';
     return;
   }
+  const basketIds = new Set((BasketManager.get() || []).map(i => i.id));
   el.innerHTML = '<div class="grid">' + items.map(item => {
     const img = item.image
       ? `<img src="${item.image}" alt="${item.title}" loading="lazy">`
       : '<div class="no-image">No image</div>';
     const url = (item.url || '').startsWith('http') ? item.url : 'https://www.vinted.co.uk' + item.url;
+    const inBasket = basketIds.has(item.id);
+    const btnClass = 'btn-add-basket' + (inBasket ? ' added' : '');
+    const btnText = inBasket ? 'Added' : 'Add to Basket';
+    const dataItem = encodeURIComponent(JSON.stringify({ id: item.id, title: item.title, image: item.image, price: item.price, currency: item.currency, url: url }));
     return `<div class="card">
       <a href="${url}" target="_blank" rel="noopener">
         ${img}
@@ -232,6 +292,7 @@ function renderItems(items, total) {
           </div>
         </div>
       </a>
+      <button class="${btnClass}" data-item='${dataItem}'>${btnText}</button>
     </div>`;
   }).join('') + '</div>';
 }
@@ -254,6 +315,18 @@ async function goToPage(page) {
   if (document.getElementById('dealMode').checked) { await doDeals(); return; }
   await runSearch();
 }
+
+document.getElementById('results').addEventListener('click', function(e) {
+  const btn = e.target.closest('.btn-add-basket');
+  if (!btn) return;
+  if (btn.classList.contains('added')) { BasketManager.toggle(); return; }
+  try {
+    const item = JSON.parse(decodeURIComponent(btn.dataset.item));
+    BasketManager.add(item);
+    btn.textContent = 'Added';
+    btn.classList.add('added');
+  } catch (err) {}
+});
 
 loadSizes();
 </script>
