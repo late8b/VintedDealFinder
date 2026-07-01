@@ -25,6 +25,11 @@ const STATUS_MAP = {
   very_good: 4, good: 5, satisfactory: 6,
 };
 
+function parseStatusIds(raw) {
+  if (!raw) return '';
+  return raw.split(',').map(k => STATUS_MAP[k.trim().toLowerCase().replace(/\s+/g, '_')]).filter(Boolean).join(',');
+}
+
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Accept': 'application/json, text/plain, */*',
@@ -197,10 +202,8 @@ app.get('/api/search', async (req, res) => {
   if (req.query.price_to) params.price_to = req.query.price_to;
   if (req.query.catalog_ids) params.catalog_ids = req.query.catalog_ids;
   if (req.query.brand_ids) params.brand_ids = req.query.brand_ids;
-  if (req.query.condition) {
-    const ids = req.query.condition.split(',').map(k => STATUS_MAP[k.trim().toLowerCase().replace(/\s+/g, '_')]).filter(Boolean);
-    if (ids.length) params.status_ids = ids.join(',');
-  }
+  const ids = parseStatusIds(req.query.condition);
+  if (ids) params.status_ids = ids;
 
   const priceFrom = req.query.price_from !== undefined ? parseFloat(req.query.price_from) : undefined;
   const priceTo = req.query.price_to !== undefined ? parseFloat(req.query.price_to) : undefined;
@@ -226,10 +229,8 @@ app.get('/api/deals', async (req, res) => {
   if (req.query.price_to) params.price_to = req.query.price_to;
   if (req.query.catalog_ids) params.catalog_ids = req.query.catalog_ids;
   if (req.query.brand_ids) params.brand_ids = req.query.brand_ids;
-  if (req.query.condition) {
-    const ids = req.query.condition.split(',').map(k => STATUS_MAP[k.trim().toLowerCase().replace(/\s+/g, '_')]).filter(Boolean);
-    if (ids.length) params.status_ids = ids.join(',');
-  }
+  const ids = parseStatusIds(req.query.condition);
+  if (ids) params.status_ids = ids;
   const domain = COUNTRY_DOMAINS[req.query.country] || null;
   const allItems = [];
   for (let p = 1; p <= pages; p++) {

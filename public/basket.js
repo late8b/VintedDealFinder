@@ -4,6 +4,8 @@ function esc(s) {
   return d.innerHTML;
 }
 
+const BASE_DOMAINS = { uk: 'https://www.vinted.co.uk', fr: 'https://www.vinted.fr', de: 'https://www.vinted.de', es: 'https://www.vinted.es', it: 'https://www.vinted.it', nl: 'https://www.vinted.nl', us: 'https://www.vinted.com' };
+
 const BasketManager = {
   STORAGE_KEY: 'vintedDealBasket',
 
@@ -29,7 +31,7 @@ const BasketManager = {
       thumbnail_url: item.image,
       price: item.price,
       currency: item.currency,
-      url: item.url.startsWith('http') ? item.url : 'https://www.vinted.co.uk' + item.url,
+      url: item.url.startsWith('http') ? item.url : (BASE_DOMAINS[item.country] || 'https://www.vinted.co.uk') + item.url,
       added_at: Date.now(),
       discount_percent: 20,
       last_price: item.price,

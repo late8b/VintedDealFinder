@@ -93,9 +93,7 @@
   .badge-time { background:#f0f0f0; color:#666; font-size:10px; font-weight:400; float:right; }
   .badge-bundle { background:#9b59b6; color:#fff; font-size:10px; }
   .badge-deal { background:#f39c12; color:#fff; font-size:10px; }
-  .basket-stale { font-size:11px; color:#c00; margin-left:6px; }
   .filters select { padding:7px 10px; border:1px solid #ddd; border-radius:4px; font-size:14px; background:#fff; }
-  .filters .small-input { width:70px; }
   .country-select { min-width:55px; }
   .saved-searches { background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); margin-bottom:16px; overflow:hidden; }
   .saved-header { display:flex; align-items:center; gap:8px; padding:10px 14px; cursor:pointer; user-select:none; }
@@ -109,15 +107,12 @@
   .saved-item:last-child { border-bottom:none; }
   .saved-item .q { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .saved-item .new-badge { background:#ff4444; color:#fff; border-radius:10px; padding:1px 7px; font-size:11px; font-weight:700; }
-  .saved-notif-off { opacity:.5; }
-  .saved-notif-on { color:#09f; }
   .notif-request { font-size:12px; color:#888; cursor:pointer; }
   .notif-request:hover { color:#09f; }
   .btn-save-search { padding:7px 14px; border:1px solid #ddd; border-radius:4px; font-size:13px; background:#fff; cursor:pointer; }
   .btn-save-search:hover { background:#f0f4ff; border-color:#09f; }
   .btn-del-saved { background:none; border:none; cursor:pointer; color:#c00; font-size:15px; padding:0 4px; }
   .btn-del-saved:hover { background:#ffe0e0; border-radius:4px; }
-  .seller-group-header { grid-column:1/-1; font-size:13px; color:#888; padding:8px 0 4px; border-top:1px solid #eee; margin-top:8px; }
 </style>
 </head>
 <body>
@@ -253,10 +248,19 @@ function sizeCatalogIds() {
   return group ? (SIZE_GROUP_CATALOG[group.label] || '') : '';
 }
 
+const sizeCache = {};
+
 async function loadSizes() {
   const q = document.getElementById('query').value || 'nike';
   const cnt = document.getElementById('country').value;
+  const key = cnt + ':' + q;
   const sel = document.getElementById('size');
+  const prevVal = sel.value;
+  if (sizeCache[key]) {
+    sel.innerHTML = sizeCache[key];
+    sel.value = prevVal;
+    return;
+  }
   sel.innerHTML = '<option value="">Loading sizes...</option>';
   try {
     const url = '/api/sizes?q=' + encodeURIComponent(q) + (cnt !== 'uk' ? '&country=' + cnt : '');
@@ -273,21 +277,21 @@ async function loadSizes() {
       if (!grouped[g]) grouped[g] = [];
       grouped[g].push(s.title);
     });
-    sel.innerHTML = '<option value="">All sizes</option>';
+    let html = '<option value="">All sizes</option>';
     order.forEach(g => {
       if (!grouped[g]) return;
-      const og = document.createElement('optgroup');
-      og.label = g;
+      const label = esc(g);
+      html += '<optgroup label="' + label + '">';
       grouped[g].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       grouped[g].forEach(title => {
-        const opt = document.createElement('option');
-        opt.value = title;
-        const isAmbiguous = /^(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl)$/i.test(title.trim());
-        opt.textContent = isAmbiguous ? title + ' (' + g + ')' : title;
-        og.appendChild(opt);
+        const safe = esc(title);
+        const text = /^(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl)$/i.test(title.trim()) ? title + ' (' + g + ')' : title;
+        html += '<option value="' + safe + '">' + esc(text) + '</option>';
       });
-      sel.appendChild(og);
+      html += '</optgroup>';
     });
+    sizeCache[key] = html;
+    sel.innerHTML = html;
   } catch {
     sel.innerHTML = '<option value="">Sizes unavailable</option>';
   }
@@ -353,18 +357,22 @@ async function doSearch() {
 async function runSearch() {
   const btn = document.getElementById('searchBtn');
   const errDiv = document.getElementById('error');
+  if (searchAbort) searchAbort.abort();
+  searchAbort = new AbortController();
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Searching...';
   errDiv.style.display = 'none';
 
   const params = new URLSearchParams(getSearchParams(currentPage));
   try {
-    const res = await fetch('/api/search?' + params.toString());
+    const res = await fetch('/api/search?' + params.toString(), { signal: searchAbort.signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data.error) { errDiv.textContent = data.error; errDiv.style.display = 'block'; return; }
     renderItems(data.items || [], data.total || 0);
     renderPagination(data.page || 1, data.total || 0);
   } catch (err) {
+    if (err.name === 'AbortError') return;
     errDiv.textContent = 'Error: ' + err.message;
     errDiv.style.display = 'block';
   } finally {
@@ -380,6 +388,8 @@ async function doDeals() {
   const el = document.getElementById('results');
   const errDiv = document.getElementById('error');
   const paginationDiv = document.getElementById('pagination');
+  if (searchAbort) searchAbort.abort();
+  searchAbort = new AbortController();
   el.innerHTML = '<div class="loading"><span class="spinner"></span> Scanning for deals...</div>';
   paginationDiv.innerHTML = '';
   errDiv.style.display = 'none';
@@ -388,15 +398,21 @@ async function doDeals() {
   applyFilterParams(p, getFilterParams());
 
   try {
-    const res = await fetch('/api/deals?' + new URLSearchParams(p).toString());
+    const res = await fetch('/api/deals?' + new URLSearchParams(p).toString(), { signal: searchAbort.signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data.error) { errDiv.textContent = data.error; errDiv.style.display = 'block'; return; }
     renderItems(data.items || [], data.total || 0);
   } catch (err) {
+    if (err.name === 'AbortError') return;
     errDiv.textContent = 'Error: ' + err.message;
     errDiv.style.display = 'block';
   }
 }
+
+const BASE_DOMAINS = { uk: 'https://www.vinted.co.uk', fr: 'https://www.vinted.fr', de: 'https://www.vinted.de', es: 'https://www.vinted.es', it: 'https://www.vinted.it', nl: 'https://www.vinted.nl', us: 'https://www.vinted.com' };
+
+let searchAbort;
 
 function renderItems(items, total) {
   document.getElementById('count').textContent = total + ' items found';
@@ -413,35 +429,31 @@ function renderItems(items, total) {
   const bundleSellers = new Set(Object.keys(sellerCounts).filter(u => sellerCounts[u] > 1));
 
   const basketIds = new Set((BasketManager.get() || []).map(i => i.id));
+  const countryEl = document.getElementById('country');
+  const cntVal = countryEl.value;
+  const baseDomain = BASE_DOMAINS[cntVal] || 'https://www.vinted.co.uk';
   el.innerHTML = '<div class="grid">' + items.map(item => {
+    const title = esc(item.title || '');
     const img = item.image
-      ? `<img src="${item.image}" alt="${item.title}" loading="lazy">`
+      ? `<img src="${item.image}" alt="${title}" loading="lazy">`
       : '<div class="no-image">No image</div>';
-    const baseDomain = { uk: 'https://www.vinted.co.uk', fr: 'https://www.vinted.fr', de: 'https://www.vinted.de', es: 'https://www.vinted.es', it: 'https://www.vinted.it', nl: 'https://www.vinted.nl', us: 'https://www.vinted.com' }[document.getElementById('country').value] || 'https://www.vinted.co.uk';
     const url = (item.url || '').startsWith('http') ? item.url : baseDomain + item.url;
     const inBasket = basketIds.has(item.id);
     const btnClass = 'btn-add-basket' + (inBasket ? ' added' : '');
     const btnText = inBasket ? 'Added' : 'Add to Basket';
-    const countryCode = document.getElementById('country').value;
-    const dataItem = encodeURIComponent(JSON.stringify({ id: item.id, title: item.title, image: item.image, price: item.price, currency: item.currency, url: url, country: countryCode }));
+    const dataItem = encodeURIComponent(JSON.stringify({ id: item.id, title: item.title, image: item.image, price: item.price, currency: item.currency, url, country: cntVal }));
 
     let extraBadges = '';
-    if (bundleSellers.has(item.seller?.username || '')) {
-      extraBadges += '<span class="badge badge-bundle">Bundle</span> ';
-    }
+    if (bundleSellers.has(item.seller?.username || '')) extraBadges += '<span class="badge badge-bundle">Bundle</span> ';
     const dealDiff = avgPrice > 0 ? avgPrice - (item.price || 0) : 0;
-    if (dealDiff >= 1) {
-      extraBadges += '<span class="badge badge-deal">Deal ✓</span> ';
-    } else if (dealDiff > 0) {
-      const symbol = item.currency === 'GBP' ? '£' : '€';
-      extraBadges += `<span class="badge badge-deal">${symbol}${dealDiff.toFixed(1)} below avg</span> `;
-    }
+    if (dealDiff >= 1) extraBadges += '<span class="badge badge-deal">Deal ✓</span> ';
+    else if (dealDiff > 0) extraBadges += `<span class="badge badge-deal">${item.currency === 'GBP' ? '£' : '€'}${dealDiff.toFixed(1)} below avg</span> `;
 
     return `<div class="card">
       <a href="${url}" target="_blank" rel="noopener">
         ${img}
         <div class="card-body">
-          <h3 title="${item.title}">${item.title}</h3>
+          <h3 title="${title}">${title}</h3>
           <div class="meta">${item.brand || ''} ${item.size ? '· ' + item.size : ''} ${item.ago ? '<span class="badge badge-time">' + item.ago + '</span>' : ''}</div>
           <div class="price">${item.currency === 'GBP' ? '£' : '€'}${item.price}</div>
           <div style="margin-top:4px">${extraBadges}</div>
