@@ -146,6 +146,7 @@ function formatItems(raw, minLikes, maxLikes, sizeFilter, priceFrom, priceTo) {
       condition: item.status, likes, views: item.view_count || 0,
       brand: item.brand_title, size: item.size_title,
       seller: { username: item.user?.login },
+      ago: item.item_box?.second_line || null,
     });
     return acc;
   }, []);
@@ -237,6 +238,7 @@ app.get('/api/deals', async (req, res) => {
     condition: item.status, likes: item.favourite_count || 0,
     views: item.view_count || 0, brand: item.brand_title, size: item.size_title,
     seller: { username: item.user?.login },
+    ago: item.item_box?.second_line || null,
   }));
 
   res.json({ items, total: items.length });

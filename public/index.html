@@ -82,6 +82,7 @@
   .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(80px); background:#333; color:#fff; padding:10px 20px; border-radius:8px; font-size:14px; z-index:9999; opacity:0; transition:all .3s ease; pointer-events:none; white-space:nowrap; }
   .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
   .badge-dropped { background:#09b83e; color:#fff; font-size:10px; margin-left:4px; }
+  .badge-time { background:#f0f0f0; color:#666; font-size:10px; font-weight:400; float:right; }
   .basket-stale { font-size:11px; color:#c00; margin-left:6px; }
 </style>
 </head>
@@ -159,6 +160,17 @@ document.getElementById('dealMode').addEventListener('change', function() {
   document.getElementById('dealPagesWrapper').style.display = this.checked ? 'inline' : 'none';
 });
 
+function sizeGroup(title) {
+  const t = title.toLowerCase().trim();
+  if (/woman|female/i.test(t)) return 'Women';
+  if (/mens?(\s|'|$)|male/i.test(t)) return 'Men';
+  if (/kid|child|baby|toddler|girl|boy|junior/i.test(t)) return 'Kids';
+  if (/^(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl|5xl)(\s*\/.*)?$/i.test(t)) return 'Clothing';
+  if (/^[\d.,]+\s*(\/\s*[\d.,]+)?$/.test(t) && parseFloat(t) > 0) return 'Shoes / Numeric';
+  if (/one size|unisex|os/i.test(t)) return 'Unisex / One size';
+  return 'Other';
+}
+
 async function loadSizes() {
   const q = document.getElementById('query').value || 'nike';
   const sel = document.getElementById('size');
@@ -170,12 +182,26 @@ async function loadSizes() {
       sel.innerHTML = '<option value="">Sizes unavailable</option>';
       return;
     }
-    sel.innerHTML = '<option value="">All sizes</option>';
+    const grouped = {};
+    const order = ['Women', 'Men', 'Kids', 'Clothing', 'Shoes / Numeric', 'Unisex / One size', 'Other'];
     (data.sizes || []).forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.title;
-      opt.textContent = s.title;
-      sel.appendChild(opt);
+      const g = sizeGroup(s.title);
+      if (!grouped[g]) grouped[g] = [];
+      grouped[g].push(s.title);
+    });
+    sel.innerHTML = '<option value="">All sizes</option>';
+    order.forEach(g => {
+      if (!grouped[g]) return;
+      const og = document.createElement('optgroup');
+      og.label = g;
+      grouped[g].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      grouped[g].forEach(title => {
+        const opt = document.createElement('option');
+        opt.value = title;
+        opt.textContent = title;
+        og.appendChild(opt);
+      });
+      sel.appendChild(og);
     });
   } catch {
     sel.innerHTML = '<option value="">Sizes unavailable</option>';
@@ -284,7 +310,7 @@ function renderItems(items, total) {
         ${img}
         <div class="card-body">
           <h3 title="${item.title}">${item.title}</h3>
-          <div class="meta">${item.brand || ''} ${item.size ? '· ' + item.size : ''}</div>
+          <div class="meta">${item.brand || ''} ${item.size ? '· ' + item.size : ''} ${item.ago ? '<span class="badge badge-time">' + item.ago + '</span>' : ''}</div>
           <div class="price">${item.currency === 'GBP' ? '£' : '€'}${item.price}</div>
           <div style="margin-top:6px">
             <span class="badge badge-likes">${item.likes}</span>
