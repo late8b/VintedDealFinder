@@ -8,6 +8,12 @@ const PORT = process.env.PORT || 3000;
 const DOMAIN = process.env.VINTED_DOMAIN || 'https://www.vinted.co.uk';
 const API_BASE = `${DOMAIN}/api/v2/catalog/items`;
 const CURL_BIN = path.join(__dirname, 'bin', 'curl-impersonate-chrome');
+const COUNTRY_DOMAINS = {
+  uk: 'https://www.vinted.co.uk', fr: 'https://www.vinted.fr',
+  de: 'https://www.vinted.de', es: 'https://www.vinted.es',
+  it: 'https://www.vinted.it', nl: 'https://www.vinted.nl',
+  us: 'https://www.vinted.com',
+};
 
 let cookieJar = {};
 
@@ -119,13 +125,14 @@ async function vintedFetch(url) {
   return data || { error: 'Failed to fetch from Vinted' };
 }
 
-function buildUrl(qs) {
+function buildUrl(qs, domain) {
+  const base = domain ? `${domain}/api/v2/catalog/items` : API_BASE;
   const p = new URLSearchParams();
   Object.entries(qs).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') p.set(k, v); });
-  return `${API_BASE}?${p}`;
+  return `${base}?${p}`;
 }
 
-function formatItems(raw, minLikes, maxLikes, sizeFilter, priceFrom, priceTo) {
+function formatItems(raw, minLikes, maxLikes, sizeFilter, priceFrom, priceTo, exclude) {
   return (raw || []).reduce((acc, item) => {
     const likes = item.favourite_count || 0;
     if (minLikes !== undefined && likes < minLikes) return acc;
@@ -138,6 +145,11 @@ function formatItems(raw, minLikes, maxLikes, sizeFilter, priceFrom, priceTo) {
       const ss = sizeFilter.toLowerCase().trim();
       const tokens = st.split(/[\s\/\-]+/).filter(Boolean);
       if (!tokens.some(t => t === ss) && st !== ss) return acc;
+    }
+    if (exclude) {
+      const title = (item.title || '').toLowerCase();
+      const words = exclude.split(',').map(w => w.trim().toLowerCase()).filter(Boolean);
+      if (words.some(w => title.includes(w))) return acc;
     }
     acc.push({
       id: item.id, title: item.title,
@@ -172,11 +184,13 @@ app.get('/api/search', async (req, res) => {
 
   const priceFrom = req.query.price_from !== undefined ? parseFloat(req.query.price_from) : undefined;
   const priceTo = req.query.price_to !== undefined ? parseFloat(req.query.price_to) : undefined;
+  const exclude = req.query.exclude || '';
+  const domain = COUNTRY_DOMAINS[req.query.country] || null;
 
-  const data = await vintedFetch(buildUrl(params));
+  const data = await vintedFetch(buildUrl(params, domain));
   if (data.error) return res.json({ error: data.error, items: [], total: 0, page, per_page: perPage });
 
-  const items = formatItems(data.items, minLikes, maxLikes, req.query.size, priceFrom, priceTo);
+  const items = formatItems(data.items, minLikes, maxLikes, req.query.size, priceFrom, priceTo, exclude);
   res.json({ items, total: items.length, page, per_page: perPage });
 });
 
@@ -196,10 +210,11 @@ app.get('/api/deals', async (req, res) => {
     const ids = req.query.condition.split(',').map(k => STATUS_MAP[k.trim().toLowerCase().replace(/\s+/g, '_')]).filter(Boolean);
     if (ids.length) params.status_ids = ids.join(',');
   }
+  const domain = COUNTRY_DOMAINS[req.query.country] || null;
   const allItems = [];
   for (let p = 1; p <= pages; p++) {
     params.page = p;
-    const data = await vintedFetch(buildUrl(params));
+    const data = await vintedFetch(buildUrl(params, domain));
     if (data.error) break;
     allItems.push(...(data.items || []));
   }
@@ -210,6 +225,12 @@ app.get('/api/deals', async (req, res) => {
   const priceTo = req.query.price_to !== undefined ? parseFloat(req.query.price_to) : undefined;
   if (priceFrom !== undefined) filtered = filtered.filter(item => (item.price?.amount || 0) >= priceFrom);
   if (priceTo !== undefined) filtered = filtered.filter(item => (item.price?.amount || 0) <= priceTo);
+
+  const exclude = req.query.exclude || '';
+  if (exclude) {
+    const words = exclude.split(',').map(w => w.trim().toLowerCase()).filter(Boolean);
+    if (words.length) filtered = filtered.filter(item => !words.some(w => (item.title || '').toLowerCase().includes(w)));
+  }
 
   const sizeFilter = req.query.size;
   if (sizeFilter) {
@@ -247,7 +268,8 @@ app.get('/api/deals', async (req, res) => {
 
 app.get('/api/sizes', async (req, res) => {
   const q = req.query.q || 'nike';
-  const data = await vintedFetch(`${API_BASE}?search_text=${encodeURIComponent(q)}&per_page=96`);
+  const domain = COUNTRY_DOMAINS[req.query.country] || null;
+  const data = await vintedFetch(buildUrl({ search_text: q, per_page: 96 }, domain));
   if (data.error) return res.json({ error: data.error, sizes: [] });
   const seen = {};
   const sizes = [];
@@ -280,6 +302,36 @@ app.post('/api/refresh-basket', async (req, res) => {
   );
   const items = results.map(r => r.status === 'fulfilled' ? r.value : { error: 'fetch failed' });
   res.json({ items });
+});
+
+app.post('/api/saved-search-check', async (req, res) => {
+  const { searches } = req.body;
+  if (!Array.isArray(searches) || searches.length === 0) return res.json({ results: [] });
+  const results = await Promise.allSettled(
+    searches.map(async (s) => {
+      const params = { search_text: s.query || '', page: 1, per_page: 96, order: 'newest_first' };
+      if (s.price_from) params.price_from = s.price_from;
+      if (s.price_to) params.price_to = s.price_to;
+      if (s.condition) params.status_ids = s.condition;
+      const domain = COUNTRY_DOMAINS[s.country] || null;
+      const data = await vintedFetch(buildUrl(params, domain));
+      const items = (data.items || []).filter(i => i.id > (s.last_id || 0));
+      const latestId = items.length > 0 ? Math.max(...items.map(i => i.id)) : (s.last_id || 0);
+      return {
+        query: s.query, filters: s.filters || {},
+        new_count: items.length, latest_id: latestId,
+        price_from: s.price_from, price_to: s.price_to,
+        condition: s.condition, country: s.country,
+        items: items.slice(0, 10).map(i => ({
+          id: i.id, title: i.title, price: i.price?.amount,
+          currency: i.price?.currency_code, url: i.url, image: i.photo?.url,
+          ago: i.item_box?.second_line || null,
+        })),
+      };
+    })
+  );
+  const good = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+  res.json({ results: good });
 });
 
 app.get('/', (req, res) => {

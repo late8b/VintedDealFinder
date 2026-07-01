@@ -91,7 +91,33 @@
   .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
   .badge-dropped { background:#09b83e; color:#fff; font-size:10px; margin-left:4px; }
   .badge-time { background:#f0f0f0; color:#666; font-size:10px; font-weight:400; float:right; }
+  .badge-bundle { background:#9b59b6; color:#fff; font-size:10px; }
+  .badge-deal { background:#f39c12; color:#fff; font-size:10px; }
   .basket-stale { font-size:11px; color:#c00; margin-left:6px; }
+  .filters select { padding:7px 10px; border:1px solid #ddd; border-radius:4px; font-size:14px; background:#fff; }
+  .filters .small-input { width:70px; }
+  .country-select { min-width:55px; }
+  .saved-searches { background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); margin-bottom:16px; overflow:hidden; }
+  .saved-header { display:flex; align-items:center; gap:8px; padding:10px 14px; cursor:pointer; user-select:none; }
+  .saved-header:hover { background:#f9f9f9; }
+  .saved-header h3 { margin:0; font-size:14px; flex:1; }
+  .saved-header .arrow { transition:transform .2s; }
+  .saved-header .arrow.open { transform:rotate(90deg); }
+  .saved-body { display:none; padding:0 14px 12px; }
+  .saved-body.open { display:block; }
+  .saved-item { display:flex; align-items:center; gap:6px; padding:6px 0; border-bottom:1px solid #f0f0f0; font-size:13px; }
+  .saved-item:last-child { border-bottom:none; }
+  .saved-item .q { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .saved-item .new-badge { background:#ff4444; color:#fff; border-radius:10px; padding:1px 7px; font-size:11px; font-weight:700; }
+  .saved-notif-off { opacity:.5; }
+  .saved-notif-on { color:#09f; }
+  .notif-request { font-size:12px; color:#888; cursor:pointer; }
+  .notif-request:hover { color:#09f; }
+  .btn-save-search { padding:7px 14px; border:1px solid #ddd; border-radius:4px; font-size:13px; background:#fff; cursor:pointer; }
+  .btn-save-search:hover { background:#f0f4ff; border-color:#09f; }
+  .btn-del-saved { background:none; border:none; cursor:pointer; color:#c00; font-size:15px; padding:0 4px; }
+  .btn-del-saved:hover { background:#ffe0e0; border-radius:4px; }
+  .seller-group-header { grid-column:1/-1; font-size:13px; color:#888; padding:8px 0 4px; border-top:1px solid #eee; margin-top:8px; }
 </style>
 </head>
 <body>
@@ -110,6 +136,17 @@
       <option value="price_high_to_low">Price: High to Low</option>
       <option value="relevance">Relevance</option>
     </select>
+    <select id="country" class="country-select" onchange="loadSizes()">
+      <option value="uk">🇬🇧 UK</option>
+      <option value="fr">🇫🇷 FR</option>
+      <option value="de">🇩🇪 DE</option>
+      <option value="es">🇪🇸 ES</option>
+      <option value="it">🇮🇹 IT</option>
+      <option value="nl">🇳🇱 NL</option>
+      <option value="us">🇺🇸 US</option>
+    </select>
+    <button type="button" class="btn-save-search" onclick="saveSearch()" title="Save current search">💾 Save</button>
+    <span class="notif-request" id="notifRequest" onclick="requestNotif()" style="display:none">🔔 Enable notifications</span>
   </div>
   <div class="row">
     <input type="number" id="priceMin" placeholder="Min price" min="0" step="0.01">
@@ -124,6 +161,7 @@
         <label class="cond-label"><input type="checkbox" value="satisfactory" onchange="updateCondBtn()"> Satisfactory</label>
       </div>
     </div>
+    <input type="text" id="exclude" placeholder="Exclude keywords (comma separated)" style="flex:0.8;min-width:180px">
   </div>
   <div class="row">
     <select id="size">
@@ -143,7 +181,26 @@
         <input type="checkbox" id="strictMatch" checked> Strict title match
       </label>
     </span>
+    <label style="font-size:13px;color:#555;display:flex;align-items:center;gap:4px">
+      Per page:
+      <select id="perPage" style="width:65px">
+        <option value="48">48</option>
+        <option value="96">96</option>
+      </select>
+    </label>
     <button class="btn" id="searchBtn" onclick="doSearch()">Search</button>
+  </div>
+</div>
+
+<div id="savedSearches" class="saved-searches">
+  <div class="saved-header" onclick="toggleSaved()">
+    <h3>Saved Searches</h3>
+    <span id="savedCount" style="font-size:12px;color:#888"></span>
+    <span class="arrow" id="savedArrow">▶</span>
+  </div>
+  <div class="saved-body" id="savedBody">
+    <div id="savedList"></div>
+    <div id="savedEmpty" style="font-size:12px;color:#aaa;padding:8px 0">No saved searches yet</div>
   </div>
 </div>
 
@@ -183,10 +240,12 @@ function sizeGroup(title) {
 
 async function loadSizes() {
   const q = document.getElementById('query').value || 'nike';
+  const cnt = document.getElementById('country').value;
   const sel = document.getElementById('size');
   sel.innerHTML = '<option value="">Loading sizes...</option>';
   try {
-    const res = await fetch('/api/sizes?q=' + encodeURIComponent(q));
+    const url = '/api/sizes?q=' + encodeURIComponent(q) + (cnt !== 'uk' ? '&country=' + cnt : '');
+    const res = await fetch(url);
     const data = await res.json();
     if (data.error || !data.sizes || data.sizes.length === 0) {
       sel.innerHTML = '<option value="">Sizes unavailable</option>';
@@ -240,19 +299,23 @@ document.addEventListener('click', function(e) {
 });
 
 function getSearchParams(page) {
-  const p = { query: document.getElementById('query').value, page: page || 1, per_page: 48, order: document.getElementById('order').value };
+  const p = { query: document.getElementById('query').value, page: page || 1, per_page: document.getElementById('perPage').value, order: document.getElementById('order').value };
   const pf = document.getElementById('priceMin').value;
   const pt = document.getElementById('priceMax').value;
   const cond = getConditions();
   const sz = document.getElementById('size').value;
   const minL = document.getElementById('minLikes').value;
   const maxL = document.getElementById('maxLikes').value;
+  const exc = document.getElementById('exclude').value;
+  const cnt = document.getElementById('country').value;
   if (pf) p.price_from = pf;
   if (pt) p.price_to = pt;
   if (cond) p.condition = cond;
   if (sz) p.size = sz;
   if (minL) p.min_likes = minL;
   if (maxL) p.max_likes = maxL;
+  if (exc) p.exclude = exc;
+  if (cnt !== 'uk') p.country = cnt;
   return p;
 }
 
@@ -301,10 +364,14 @@ async function doDeals() {
   const pt = document.getElementById('priceMax').value;
   const cond = getConditions();
   const sz = document.getElementById('size').value;
+  const exc = document.getElementById('exclude').value;
+  const cnt = document.getElementById('country').value;
   if (pf) p.price_from = pf;
   if (pt) p.price_to = pt;
   if (cond) p.condition = cond;
   if (sz) p.size = sz;
+  if (exc) p.exclude = exc;
+  if (cnt !== 'uk') p.country = cnt;
 
   try {
     const res = await fetch('/api/deals?' + new URLSearchParams(p).toString());
@@ -324,7 +391,15 @@ function renderItems(items, total) {
     el.innerHTML = '<div class="loading">No items found</div>';
     return;
   }
+
+  const avgPrice = items.reduce((s, i) => s + (i.price || 0), 0) / items.length;
+
+  const sellerCounts = {};
+  items.forEach(item => { const u = item.seller?.username || ''; sellerCounts[u] = (sellerCounts[u] || 0) + 1; });
+  const bundleSellers = new Set(Object.keys(sellerCounts).filter(u => sellerCounts[u] > 1));
+
   const basketIds = new Set((BasketManager.get() || []).map(i => i.id));
+  const perPage = parseInt(document.getElementById('perPage').value) || 48;
   el.innerHTML = '<div class="grid">' + items.map(item => {
     const img = item.image
       ? `<img src="${item.image}" alt="${item.title}" loading="lazy">`
@@ -334,6 +409,19 @@ function renderItems(items, total) {
     const btnClass = 'btn-add-basket' + (inBasket ? ' added' : '');
     const btnText = inBasket ? 'Added' : 'Add to Basket';
     const dataItem = encodeURIComponent(JSON.stringify({ id: item.id, title: item.title, image: item.image, price: item.price, currency: item.currency, url: url }));
+
+    let extraBadges = '';
+    if (bundleSellers.has(item.seller?.username || '')) {
+      extraBadges += '<span class="badge badge-bundle">Bundle</span> ';
+    }
+    const dealDiff = avgPrice > 0 ? avgPrice - (item.price || 0) : 0;
+    if (dealDiff >= 1) {
+      extraBadges += '<span class="badge badge-deal">Deal ✓</span> ';
+    } else if (dealDiff > 0) {
+      const symbol = item.currency === 'GBP' ? '£' : '€';
+      extraBadges += `<span class="badge badge-deal">${symbol}${dealDiff.toFixed(1)} below avg</span> `;
+    }
+
     return `<div class="card">
       <a href="${url}" target="_blank" rel="noopener">
         ${img}
@@ -341,7 +429,8 @@ function renderItems(items, total) {
           <h3 title="${item.title}">${item.title}</h3>
           <div class="meta">${item.brand || ''} ${item.size ? '· ' + item.size : ''} ${item.ago ? '<span class="badge badge-time">' + item.ago + '</span>' : ''}</div>
           <div class="price">${item.currency === 'GBP' ? '£' : '€'}${item.price}</div>
-          <div style="margin-top:6px">
+          <div style="margin-top:4px">${extraBadges}</div>
+          <div style="margin-top:4px">
             <span class="badge badge-likes">${item.likes}</span>
             <span class="badge badge-views">${item.views}</span>
           </div>
@@ -354,7 +443,8 @@ function renderItems(items, total) {
 
 function renderPagination(page, total) {
   const div = document.getElementById('pagination');
-  const totalPages = Math.ceil(total / 48);
+  const perPage = parseInt(document.getElementById('perPage').value) || 48;
+  const totalPages = Math.ceil(total / perPage);
   if (totalPages <= 1) { div.innerHTML = ''; return; }
   let html = '';
   if (page > 1) html += `<button onclick="goToPage(${page-1})">Previous</button>`;
@@ -383,7 +473,151 @@ document.getElementById('results').addEventListener('click', function(e) {
   } catch (err) {}
 });
 
+// --- Saved Searches ---
+function getSavedSearches() {
+  try { return JSON.parse(localStorage.getItem('savedSearches') || '[]'); } catch { return []; }
+}
+
+function setSavedSearches(s) {
+  localStorage.setItem('savedSearches', JSON.stringify(s));
+}
+
+function saveSearch() {
+  const searches = getSavedSearches();
+  const query = document.getElementById('query').value.trim();
+  if (!query) { BasketManager.toast('Enter a search query first'); return; }
+  const exists = searches.some(s => s.query === query);
+  if (exists) { BasketManager.toast('Search already saved'); return; }
+  const entry = {
+    query,
+    price_from: document.getElementById('priceMin').value || '',
+    price_to: document.getElementById('priceMax').value || '',
+    condition: getConditions(),
+    country: document.getElementById('country').value,
+    last_id: 0,
+    created: Date.now(),
+  };
+  searches.push(entry);
+  setSavedSearches(searches);
+  renderSavedSearches();
+  BasketManager.toast('Search saved');
+}
+
+function deleteSaved(index) {
+  const searches = getSavedSearches();
+  searches.splice(index, 1);
+  setSavedSearches(searches);
+  renderSavedSearches();
+}
+
+function toggleSaved() {
+  const body = document.getElementById('savedBody');
+  const arrow = document.getElementById('savedArrow');
+  body.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+
+function renderSavedSearches() {
+  const searches = getSavedSearches();
+  const list = document.getElementById('savedList');
+  const empty = document.getElementById('savedEmpty');
+  document.getElementById('savedCount').textContent = searches.length ? '(' + searches.length + ')' : '';
+  if (searches.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = searches.map((s, i) => {
+    const filters = [];
+    if (s.price_from) filters.push('£' + s.price_from + '+');
+    if (s.price_to) filters.push('≤£' + s.price_to);
+    if (s.condition) filters.push(s.condition.replace(/_/g, ' '));
+    return `<div class="saved-item">
+      <span class="q" title="${s.query}${filters.length ? ' (' + filters.join(', ') + ')' : ''}">
+        <a href="#" onclick="event.preventDefault();loadSaved(${i})" style="color:inherit;text-decoration:none">${s.query}</a>
+        ${filters.length ? '<span style="color:#888;font-size:11px">' + filters.join(', ') + '</span>' : ''}
+      </span>
+      ${s.last_id > 0 ? '<span class="new-badge" id="newBadge' + i + '"></span>' : ''}
+      <button class="btn-del-saved" onclick="deleteSaved(${i})" title="Delete">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function loadSaved(index) {
+  const searches = getSavedSearches();
+  const s = searches[index];
+  if (!s) return;
+  document.getElementById('query').value = s.query || '';
+  document.getElementById('priceMin').value = s.price_from || '';
+  document.getElementById('priceMax').value = s.price_to || '';
+  if (s.country) document.getElementById('country').value = s.country;
+  const condMenu = document.getElementById('condMenu');
+  condMenu.querySelectorAll('input').forEach(cb => cb.checked = false);
+  if (s.condition) {
+    s.condition.split(',').forEach(v => {
+      const cb = condMenu.querySelector('input[value="' + v.trim() + '"]');
+      if (cb) cb.checked = true;
+    });
+  }
+  updateCondBtn();
+  document.getElementById('savedBody').classList.remove('open');
+  document.getElementById('savedArrow').classList.remove('open');
+  doSearch();
+}
+
+async function checkSavedSearches() {
+  const searches = getSavedSearches();
+  if (searches.length === 0) return;
+  try {
+    const res = await fetch('/api/saved-search-check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ searches }),
+    });
+    const data = await res.json();
+    if (!data.results) return;
+    let changed = false;
+    const existing = getSavedSearches();
+    data.results.forEach((r, idx) => {
+      if (!existing[idx]) return;
+      if (r.new_count > 0) {
+        existing[idx].last_id = r.latest_id;
+        existing[idx]._new_count = r.new_count;
+        changed = true;
+        if (document.visibilityState === 'hidden' && 'Notification' in window && Notification.permission === 'granted') {
+          new Notification('Vinted Deal Finder', {
+            body: r.new_count + ' new item' + (r.new_count > 1 ? 's' : '') + ' for "' + r.query + '"',
+            tag: 'vdf-' + idx,
+          });
+        }
+      }
+    });
+    if (changed) {
+      setSavedSearches(existing);
+      renderSavedSearches();
+    }
+  } catch {}
+}
+
+// --- Notifications ---
+function requestNotif() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+// --- Init ---
+function init() {
+  renderSavedSearches();
+  if ('Notification' in window && Notification.permission === 'default') {
+    document.getElementById('notifRequest').style.display = 'inline';
+  }
+  checkSavedSearches();
+}
+
 loadSizes();
+init();
 </script>
 </body>
 </html>
