@@ -257,7 +257,6 @@ function getSearchParams(page) {
 }
 
 async function doSearch() {
-  if (!document.getElementById('query').value) return;
   currentPage = 1;
   if (document.getElementById('dealMode').checked) { await doDeals(); return; }
   await runSearch();
@@ -287,7 +286,6 @@ async function runSearch() {
 }
 
 async function doDeals() {
-  if (!document.getElementById('query').value) return;
   const pages = parseInt(document.getElementById('dealPages').value) || 5;
   const maxLikes = document.getElementById('maxLikes').value || 3;
   const strict = document.getElementById('strictMatch').checked;
